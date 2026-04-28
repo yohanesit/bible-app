@@ -1,12 +1,33 @@
 //  BibleChapterView.swift
 //  BibleApp
 //
-//  Displays a single Bible chapter loaded by BibleChapterProvider.
+//  Displays a Bible book as a continuous, scrollable stream of chapters.
+//  All chapters of the active book are loaded upfront from BibleDatabase
+//  and rendered in a single ScrollView so the user can scroll seamlessly
+//  forward and backward between chapters. Native rubber-band remains at
+//  the book's first and last chapters.
+//
 //  Verse numbers appear inline before each verse in the accent colour.
 //  Verses marked with p:true in the data start a new visible paragraph.
 
 import SwiftUI
 import UIKit
+
+// MARK: - LoadedChapter
+
+struct LoadedChapter: Identifiable, Equatable {
+    let id: String           // "<bookName>-<chapter>"
+    let bookSlug: String
+    let bookName: String
+    let chapter: Int
+    let verses: [BibleVerse]
+
+    static func == (lhs: LoadedChapter, rhs: LoadedChapter) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+// MARK: - BibleChapterView
 
 struct BibleChapterView: View {
     @Environment(\.appTheme)    private var theme
@@ -17,132 +38,142 @@ struct BibleChapterView: View {
     @Binding var isReadingState: Bool
     var topContentInset: CGFloat
     var onTap: () -> Void = {}
-    var onNextChapter: () -> Void = {}
+    var onVisibleChapterChange: (String, Int) -> Void = { _, _ in }
 
+    @State private var bookChapters: [LoadedChapter] = []
+    @State private var loadedBookSlug: String? = nil
+    @State private var visibleChapterID: String? = nil
     @State private var lastScrollOffset: CGFloat = 0
+    @State private var pendingScrollTarget: String? = nil
+    @State private var hasInitiallyLoaded = false
 
     init(isReadingState: Binding<Bool>, topContentInset: CGFloat,
          onTap: @escaping () -> Void = {},
-         onNextChapter: @escaping () -> Void = {}) {
+         onVisibleChapterChange: @escaping (String, Int) -> Void = { _, _ in }) {
         _isReadingState = isReadingState
         self.topContentInset = topContentInset
         self.onTap = onTap
-        self.onNextChapter = onNextChapter
+        self.onVisibleChapterChange = onVisibleChapterChange
     }
 
     var body: some View {
         let colors = Colors.theme(theme, mode: mode)
 
         GeometryReader { scrollGeo in
-            ScrollView {
-                Color.clear.frame(height: 0).background(
-                    ScrollOverscrollObserver(onOverscroll: onNextChapter)
-                )
-                VStack(alignment: .leading, spacing: 0) {
-                    Spacer().frame(height: topContentInset)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Spacer().frame(height: topContentInset)
 
-                    switch provider.state {
-
-                    // ── Not yet loaded ───────────────────────────────────────
-                    case .idle:
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 40)
-
-                    // ── Book loaded successfully ─────────────────────────────
-                    case .loaded(let bookName, let chapter, let verses):
-                        ChapterHeaderView(bookName: bookName, chapter: chapter,
-                                          screenHeight: scrollGeo.size.height)
-                            .padding(.horizontal, hPageMargin)
-
-                        ChapterVersesView(verses: verses)
-                            .padding(.horizontal, hPageMargin)
-
-                    // ── Book not in DB (needs sync) ──────────────────────────
-                    case .empty(let bookName, let chapter):
-                        ChapterHeaderView(bookName: bookName, chapter: chapter,
-                                          screenHeight: scrollGeo.size.height)
-                            .padding(.horizontal, hPageMargin)
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "arrow.down.circle")
-                                .font(.system(size: 14))
-                                .foregroundStyle(colors.accent)
-                            Text("Teks belum tersedia. Sinkronkan Alkitab melalui Pengaturan › Admin.")
-                                .font(.system(size: 13))
-                                .foregroundStyle(colors.textSecondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(colors.surface))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(colors.border, lineWidth: 1))
-                        .padding(.horizontal, hPageMargin)
-                    }
-
-                    // ── Next chapter hint ────────────────────────────────────
-                    if let label = nextChapterLabel {
-                        VStack(spacing: 10) {
-                            Rectangle()
-                                .fill(colors.border)
-                                .frame(width: 48, height: 0.5)
-                            HStack(spacing: 6) {
-                                Text(label)
-                                    .font(ThemeFont.buttonLargeRegular)
-                                    .foregroundStyle(colors.textSecondary)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(colors.textSecondary.opacity(0.5))
+                        if !bookChapters.isEmpty {
+                            ForEach(bookChapters) { chapter in
+                                chapterContent(chapter: chapter, screenHeight: scrollGeo.size.height)
+                                    .background(
+                                        GeometryReader { geo in
+                                            Color.clear.preference(
+                                                key: ChapterTopsKey.self,
+                                                value: [chapter.id: geo.frame(in: .named("chapterScroll")).minY]
+                                            )
+                                        }
+                                    )
+                                    .id(chapter.id)
                             }
+                        } else {
+                            unavailableView(scrollGeo: scrollGeo, colors: colors)
                         }
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 40)
-                    }
 
-                    Spacer().frame(height: 100)
-                }
-                .frame(maxWidth: .infinity, minHeight: scrollGeo.size.height, alignment: .topLeading)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ChapterScrollOffsetKey.self,
-                            value: -geo.frame(in: .named("chapterScroll")).minY
-                        )
+                        Spacer().frame(height: 100)
                     }
-                )
+                    .frame(maxWidth: .infinity, minHeight: scrollGeo.size.height, alignment: .topLeading)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: ChapterScrollOffsetKey.self,
+                                value: -geo.frame(in: .named("chapterScroll")).minY
+                            )
+                        }
+                    )
+                }
+                .onChange(of: pendingScrollTarget) { _, target in
+                    guard let target = target else { return }
+                    if hasInitiallyLoaded {
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            proxy.scrollTo(target, anchor: .top)
+                        }
+                    } else {
+                        proxy.scrollTo(target, anchor: .top)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            hasInitiallyLoaded = true
+                        }
+                    }
+                    pendingScrollTarget = nil
+                }
             }
         }
-        .id(chapterScrollResetKey)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .coordinateSpace(name: "chapterScroll")
         .onPreferenceChange(ChapterScrollOffsetKey.self) { offset in
             updateReadingState(scrollOffset: offset)
         }
+        .onPreferenceChange(ChapterTopsKey.self) { tops in
+            updateVisibleChapter(tops: tops)
+        }
         .simultaneousGesture(TapGesture().onEnded { onTap() })
         .background(colors.background)
         .scrollContentBackground(.hidden)
+        .onAppear { syncWithProvider() }
+        .onChange(of: providerStateKey) { _, _ in syncWithProvider() }
     }
 
-    private func updateReadingState(scrollOffset: CGFloat) {
-        lastScrollOffset = scrollOffset
+    // MARK: - Chapter rendering
 
-        let nearTop = scrollOffset <= 2
-        let next: Bool = !nearTop
-        if next != isReadingState {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                isReadingState = next
-            }
+    @ViewBuilder
+    private func chapterContent(chapter: LoadedChapter, screenHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ChapterHeaderView(
+                bookName: chapter.bookName,
+                chapter: chapter.chapter,
+                screenHeight: screenHeight
+            )
+            .padding(.horizontal, hPageMargin)
+
+            ChapterVersesView(verses: chapter.verses)
+                .padding(.horizontal, hPageMargin)
         }
     }
 
-    private var nextChapterLabel: String? {
-        guard case .loaded(let bookName, let chapter, _) = provider.state,
-              let entry = BibleCatalog.entry(forName: bookName),
-              chapter < entry.chapterCount else { return nil }
-        return "\(bookName) \(chapter + 1)"
+    @ViewBuilder
+    private func unavailableView(scrollGeo: GeometryProxy, colors: ThemeColors) -> some View {
+        switch provider.state {
+        case .empty(let bookName, let chapter):
+            ChapterHeaderView(bookName: bookName, chapter: chapter,
+                              screenHeight: scrollGeo.size.height)
+                .padding(.horizontal, hPageMargin)
+
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 14))
+                    .foregroundStyle(colors.accent)
+                Text("Teks belum tersedia. Sinkronkan Alkitab melalui Pengaturan › Admin.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(colors.textSecondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(colors.surface))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(colors.border, lineWidth: 1))
+            .padding(.horizontal, hPageMargin)
+        default:
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.top, 40)
+        }
     }
 
-    private var chapterScrollResetKey: String {
+    // MARK: - State sync
+
+    private var providerStateKey: String {
         switch provider.state {
         case .loaded(let bookName, let chapter, _):
             return "loaded-\(bookName)-\(chapter)"
@@ -150,6 +181,88 @@ struct BibleChapterView: View {
             return "empty-\(bookName)-\(chapter)"
         case .idle:
             return "idle"
+        }
+    }
+
+    private func syncWithProvider() {
+        let (bookName, chapter): (String, Int) = {
+            switch provider.state {
+            case .loaded(let n, let c, _): return (n, c)
+            case .empty(let n, let c):     return (n, c)
+            case .idle:                    return ("", 0)
+            }
+        }()
+
+        guard !bookName.isEmpty,
+              let entry = BibleCatalog.entry(forName: bookName) else { return }
+
+        let targetID = "\(bookName)-\(chapter)"
+
+        if loadedBookSlug != entry.slug {
+            // New book — reload all chapters
+            loadedBookSlug = entry.slug
+            bookChapters = loadAllChapters(slug: entry.slug)
+            visibleChapterID = nil
+            hasInitiallyLoaded = false
+            if !bookChapters.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    pendingScrollTarget = targetID
+                }
+            }
+        } else {
+            // Same book — scroll to chapter only if not already there
+            if visibleChapterID != targetID {
+                pendingScrollTarget = targetID
+            }
+        }
+    }
+
+    private func loadAllChapters(slug: String) -> [LoadedChapter] {
+        guard let entry = BibleCatalog.entry(forSlug: slug) else { return [] }
+        var chapters: [LoadedChapter] = []
+        for ch in 1...entry.chapterCount {
+            if let verses = BibleDatabase.shared.verses(bookSlug: slug, chapter: ch),
+               !verses.isEmpty {
+                chapters.append(LoadedChapter(
+                    id: "\(entry.name)-\(ch)",
+                    bookSlug: slug,
+                    bookName: entry.name,
+                    chapter: ch,
+                    verses: verses
+                ))
+            }
+        }
+        return chapters
+    }
+
+    // MARK: - Visibility detection
+
+    private func updateVisibleChapter(tops: [String: CGFloat]) {
+        // The "current" chapter is the one whose top has scrolled to (or just past)
+        // the reading line near the top of the viewport.
+        let threshold = topContentInset + 120
+        let candidates = tops
+            .filter { $0.value <= threshold }
+            .sorted { $0.value > $1.value }
+
+        guard let visible = candidates.first else { return }
+
+        if visibleChapterID != visible.key {
+            visibleChapterID = visible.key
+            if let chapter = bookChapters.first(where: { $0.id == visible.key }) {
+                onVisibleChapterChange(chapter.bookName, chapter.chapter)
+            }
+        }
+    }
+
+    private func updateReadingState(scrollOffset: CGFloat) {
+        lastScrollOffset = scrollOffset
+        let nearTop = scrollOffset <= 2
+        let next: Bool = !nearTop
+        if next != isReadingState {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                isReadingState = next
+            }
         }
     }
 }
@@ -320,7 +433,7 @@ private struct ChapterVersesView: View {
     }
 }
 
-// MARK: - Scroll offset preference keys
+// MARK: - Preference keys
 
 private struct ChapterScrollOffsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
@@ -329,62 +442,9 @@ private struct ChapterScrollOffsetKey: PreferenceKey {
     }
 }
 
-// MARK: - Scroll overscroll observer
-//
-// Observes the underlying UIScrollView's contentOffset via KVO so we can
-// detect rubber-band overscroll past the bottom (which SwiftUI's preference
-// keys don't expose). When overscroll exceeds the threshold once per
-// chapter, fires onOverscroll with haptic.
-
-private struct ScrollOverscrollObserver: UIViewRepresentable {
-    let onOverscroll: () -> Void
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.isHidden = true
-        DispatchQueue.main.async {
-            context.coordinator.attach(from: view)
-        }
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        context.coordinator.onOverscroll = onOverscroll
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onOverscroll: onOverscroll)
-    }
-
-    final class Coordinator: NSObject {
-        var onOverscroll: () -> Void
-        private var observation: NSKeyValueObservation?
-        private var hasTriggered = false
-
-        init(onOverscroll: @escaping () -> Void) {
-            self.onOverscroll = onOverscroll
-        }
-
-        func attach(from view: UIView) {
-            var v: UIView? = view.superview
-            while let current = v {
-                if let scrollView = current as? UIScrollView {
-                    observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
-                        guard let self = self else { return }
-                        let maxOffset = max(sv.contentSize.height - sv.bounds.height, 0)
-                        let overscroll = sv.contentOffset.y - maxOffset
-                        if overscroll > 60 && !self.hasTriggered {
-                            self.hasTriggered = true
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            self.onOverscroll()
-                        } else if overscroll < 10 {
-                            self.hasTriggered = false
-                        }
-                    }
-                    return
-                }
-                v = current.superview
-            }
-        }
+private struct ChapterTopsKey: PreferenceKey {
+    static let defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }

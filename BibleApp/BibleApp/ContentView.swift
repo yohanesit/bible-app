@@ -144,7 +144,9 @@ struct ContentView: View {
                                 isReadingState: $isReadingState,
                                 topContentInset: topContentInset,
                                 onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
-                                onNextChapter: { triggerNextChapter() }
+                                onVisibleChapterChange: { bookName, chapter in
+                                    handleVisibleChapterChange(bookName: bookName, chapter: chapter)
+                                }
                             )
                             .environment(chapterProvider)
                         }
@@ -241,13 +243,21 @@ struct ContentView: View {
                 isReadingState = false
 
                 if case .book(let newBook) = new {
-                    // Always reset chapter to the first chapter when switching books.
+                    // When switching books, keep an explicitly chosen chapter if it's valid
+                    // for the new book (e.g. user taps chapter 5 in another book).
+                    // Otherwise fall back to the first chapter.
                     let switchedBooks: Bool = {
                         if case .book(let oldBook) = old { return oldBook != newBook }
                         return true
                     }()
                     if switchedBooks {
-                        selectedRightLabel = chapterItems(for: newBook).first
+                        let validChapters = chapterItems(for: newBook)
+                        if let selectedRightLabel,
+                           validChapters.contains(selectedRightLabel) {
+                            // Keep current selection.
+                        } else {
+                            selectedRightLabel = validChapters.first
+                        }
                     }
                 }
 
@@ -447,13 +457,13 @@ struct ContentView: View {
         chapterProvider.load(bookName: name, chapter: chapter)
     }
 
-    private func triggerNextChapter() {
-        guard case .book(let name) = leftSelection,
-              let chStr = selectedRightLabel,
-              let chapter = Int(chStr),
-              let entry = BibleCatalog.entry(forName: name),
-              chapter < entry.chapterCount else { return }
-        selectedRightLabel = "\(chapter + 1)"
+    private func handleVisibleChapterChange(bookName: String, chapter: Int) {
+        guard case .book(let currentBook) = leftSelection,
+              currentBook == bookName else { return }
+        let newLabel = "\(chapter)"
+        if selectedRightLabel != newLabel {
+            selectedRightLabel = newLabel
+        }
     }
 
     private func dateFromSelectedLabel() -> Date? {
