@@ -124,6 +124,19 @@ struct BibleChapterView: View {
         .onPreferenceChange(ChapterContentHeightKey.self) { contentHeight = $0 }
         .onChange(of: chapterScrollResetKey) { _, _ in didTriggerNextChapter = false }
         .simultaneousGesture(TapGesture().onEnded { onTap() })
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30, coordinateSpace: .local)
+                .onEnded { value in
+                    guard !didTriggerNextChapter, contentHeight > 0 else { return }
+                    // Negative height = finger moved up = scroll-down intent
+                    guard value.translation.height < -50 else { return }
+                    let maxScroll = max(contentHeight - viewportHeight, 0)
+                    guard lastScrollOffset >= maxScroll - 40 else { return }
+                    didTriggerNextChapter = true
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    onNextChapter()
+                }
+        )
         .background(colors.background)
         .scrollContentBackground(.hidden)
     }
@@ -137,17 +150,6 @@ struct BibleChapterView: View {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 isReadingState = next
             }
-        }
-
-        guard contentHeight > 0 else { return }
-        let maxScroll = max(contentHeight - viewportHeight, 0)
-        let overscroll = scrollOffset - maxScroll
-        if overscroll > 72 && !didTriggerNextChapter {
-            didTriggerNextChapter = true
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            onNextChapter()
-        } else if overscroll < 20 {
-            didTriggerNextChapter = false
         }
     }
 
