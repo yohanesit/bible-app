@@ -467,6 +467,17 @@ struct ThemeFont {
         case .system: return Font.system(size: size, weight: .medium)
         }
     }
+
+    /// Slightly larger numerals for book chapter grids in the sidebar.
+    static func sidebarChapterGridCell(_ theme: AppTheme, _ textSize: AppTextSize = .pt20) -> Font {
+        let size = max(14, textSize.bodyPointSize - 3)
+        switch theme {
+        case .purba:  return Font.custom("ValkyrieBRegular", size: size)
+        case .abadi:  return Font.custom("Heliotrope4TabRegular", size: size)
+        case .kini:   return Font.custom("IBMPlexMono", size: size)
+        case .system: return Font.system(size: size, weight: .medium)
+        }
+    }
 }
 
 // MARK: - Asset catalog icons (Figma PDFs in Assets.xcassets)

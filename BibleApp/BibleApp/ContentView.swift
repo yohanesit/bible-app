@@ -124,6 +124,10 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .offset(x: leftPaneParallaxX)
                 .scaleEffect(leftPaneParallaxScale, anchor: .leading)
+                // When the pane is open, ensure it sits above the front surface
+                // for hit-testing. This avoids "invisible overlay" regressions
+                // where the center surface still intercepts taps.
+                .zIndex(currentPane == .left ? 2 : 0)
                 .environment(\.appTheme, currentTheme)
                 .environment(\.appMode,  resolvedMode)
                 .environment(\.appTextSize, textSize)
@@ -191,6 +195,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .offset(y: showPreferences ? -96 : 0)
                 .offset(x: centerX)
+                .zIndex(1)
 
                 if showPreferences {
                     Rectangle()

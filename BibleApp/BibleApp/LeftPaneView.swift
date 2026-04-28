@@ -67,7 +67,7 @@ struct LeftPaneView: View {
                             }
                         }
 
-                        AccordionRevealer(isExpanded: expanded == .daily) {
+                        if expanded == .daily {
                             DailyDateGridView(
                                 selectedLabel: selectedLabel,
                                 onSelectLabel: { label in
@@ -79,6 +79,7 @@ struct LeftPaneView: View {
                                     onClose()
                                 }
                             )
+                            .transition(.opacity)
                         }
 
                         ForEach(BibleCatalog.books) { book in
@@ -94,7 +95,7 @@ struct LeftPaneView: View {
                                 }
                             }
 
-                            AccordionRevealer(isExpanded: expanded == .book(book.name)) {
+                            if expanded == .book(book.name) {
                                 ChapterGridView(
                                     book: book,
                                     selectedLabel: selectedLabel,
@@ -107,6 +108,7 @@ struct LeftPaneView: View {
                                     }
                                     onClose()
                                 }
+                                .transition(.opacity)
                             }
                         }
                     }
@@ -274,20 +276,27 @@ private struct AccordionRevealer<Content: View>: View {
     @State private var measuredHeight: CGFloat = 0
 
     var body: some View {
-        content()
-            .fixedSize(horizontal: false, vertical: true)
-            .allowsHitTesting(isExpanded)
-            .background(
-                GeometryReader { geo in
-                    Color.clear
-                        .preference(key: AccordionHeightKey.self, value: geo.size.height)
-                }
-            )
-            .frame(height: isExpanded ? measuredHeight : 0, alignment: .top)
-            .clipped()
-            .onPreferenceChange(AccordionHeightKey.self) { newValue in
-                if newValue > 0 { measuredHeight = newValue }
-            }
+        // Match the "outer animates, inner measures" pattern:
+        // - The *inner* content is rendered at natural height and measured.
+        // - The *outer* container animates/clips its height.
+        ZStack(alignment: .top) {
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .allowsHitTesting(false)
+                            .preference(key: AccordionHeightKey.self, value: geo.size.height)
+                    }
+                )
+        }
+        .frame(height: isExpanded ? measuredHeight : 0, alignment: .top)
+        .clipped()
+        .allowsHitTesting(isExpanded)
+        .accessibilityHidden(!isExpanded)
+        .onPreferenceChange(AccordionHeightKey.self) { newValue in
+            if newValue > 0 { measuredHeight = newValue }
+        }
     }
 }
 
