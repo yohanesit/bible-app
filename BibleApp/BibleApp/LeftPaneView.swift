@@ -276,6 +276,7 @@ private struct AccordionRevealer<Content: View>: View {
     var body: some View {
         content()
             .fixedSize(horizontal: false, vertical: true)
+            .allowsHitTesting(isExpanded)
             .background(
                 GeometryReader { geo in
                     Color.clear
