@@ -67,7 +67,7 @@ struct LeftPaneView: View {
                             }
                         }
 
-                        if expanded == .daily {
+                        AccordionRevealer(isExpanded: expanded == .daily) {
                             DailyDateGridView(
                                 selectedLabel: selectedLabel,
                                 onSelectLabel: { label in
@@ -79,7 +79,6 @@ struct LeftPaneView: View {
                                     onClose()
                                 }
                             )
-                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
                         ForEach(BibleCatalog.books) { book in
@@ -95,10 +94,11 @@ struct LeftPaneView: View {
                                 }
                             }
 
-                            if expanded == .book(book.name) {
+                            AccordionRevealer(isExpanded: expanded == .book(book.name)) {
                                 ChapterGridView(
                                     book: book,
-                                    selectedLabel: selectedLabel
+                                    selectedLabel: selectedLabel,
+                                    isBookActive: selection == .book(book.name)
                                 ) { chapterStr in
                                     selectedLabel = chapterStr
                                     selection = .book(book.name)
@@ -107,7 +107,6 @@ struct LeftPaneView: View {
                                     }
                                     onClose()
                                 }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
                             }
                         }
                     }
@@ -216,6 +215,7 @@ private struct ChapterGridView: View {
 
     let book: BibleBookEntry
     let selectedLabel: String?
+    let isBookActive: Bool
     let onSelect: (String) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
@@ -227,7 +227,7 @@ private struct ChapterGridView: View {
         LazyVGrid(columns: columns, spacing: 10) {
             ForEach(1...book.chapterCount, id: \.self) { ch in
                 let label = "\(ch)"
-                let isSelected = selectedLabel == label
+                let isSelected = isBookActive && selectedLabel == label
 
                 Button { onSelect(label) } label: {
                     ZStack {
@@ -238,7 +238,7 @@ private struct ChapterGridView: View {
                         }
 
                         Text(label)
-                            .font(ThemeFont.sidebarGridCell(theme, textSize))
+                            .font(ThemeFont.sidebarChapterGridCell(theme, textSize))
                             .foregroundStyle(isSelected ? Color.white : colors.textSecondary)
                     }
                     .frame(maxWidth: .infinity)
@@ -256,6 +256,44 @@ private struct ChapterGridView: View {
         .padding(.leading, 24)
         .padding(.trailing, 16)
         .padding(.bottom, 12)
+    }
+}
+
+// MARK: - AccordionRevealer
+//
+// Animates the container's height between 0 and the natural height of its
+// content. The inner content is always rendered at its intrinsic vertical
+// size (via fixedSize), measured with a GeometryReader, and clipped by the
+// outer frame. When isExpanded toggles inside withAnimation, SwiftUI
+// interpolates the frame's height, giving a smooth "curtain" reveal.
+
+private struct AccordionRevealer<Content: View>: View {
+    let isExpanded: Bool
+    @ViewBuilder let content: () -> Content
+
+    @State private var measuredHeight: CGFloat = 0
+
+    var body: some View {
+        content()
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .preference(key: AccordionHeightKey.self, value: geo.size.height)
+                }
+            )
+            .frame(height: isExpanded ? measuredHeight : 0, alignment: .top)
+            .clipped()
+            .onPreferenceChange(AccordionHeightKey.self) { newValue in
+                if newValue > 0 { measuredHeight = newValue }
+            }
+    }
+}
+
+private struct AccordionHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
