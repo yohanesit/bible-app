@@ -44,6 +44,7 @@ struct BibleChapterView: View {
     @State private var loadedBookSlug: String? = nil
     @State private var transitionEdge: Edge = .bottom
     @State private var lastScrollOffset: CGFloat = 0
+    @State private var nextStartAtBottom: Bool = false
 
     init(isReadingState: Binding<Bool>, topContentInset: CGFloat,
          onTap: @escaping () -> Void = {},
@@ -62,6 +63,7 @@ struct BibleChapterView: View {
                 ChapterPageView(
                     chapter: current,
                     topContentInset: topContentInset,
+                    startAtBottom: nextStartAtBottom,
                     onTap: onTap,
                     onScrollOffsetChange: { offset in
                         lastScrollOffset = offset
@@ -133,6 +135,7 @@ struct BibleChapterView: View {
         guard currentIndex + 1 < bookChapters.count else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         transitionEdge = .bottom
+        nextStartAtBottom = false
         withAnimation(.easeInOut(duration: 0.4)) {
             currentIndex += 1
         }
@@ -143,6 +146,7 @@ struct BibleChapterView: View {
         guard currentIndex > 0 else { return }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         transitionEdge = .top
+        nextStartAtBottom = true
         withAnimation(.easeInOut(duration: 0.4)) {
             currentIndex -= 1
         }
@@ -186,9 +190,11 @@ struct BibleChapterView: View {
         }
 
         // Same book — animate to the externally-selected chapter if different.
+        // External selections always start at the top of the chapter.
         if let idx = bookChapters.firstIndex(where: { $0.chapter == chapter }),
            idx != currentIndex {
             transitionEdge = idx > currentIndex ? .bottom : .top
+            nextStartAtBottom = false
             withAnimation(.easeInOut(duration: 0.4)) {
                 currentIndex = idx
             }
@@ -232,6 +238,7 @@ private struct ChapterPageView: View {
 
     let chapter: LoadedChapter
     let topContentInset: CGFloat
+    let startAtBottom: Bool
     let onTap: () -> Void
     let onScrollOffsetChange: (CGFloat) -> Void
     let onOverscrollBottom: () -> Void
@@ -244,10 +251,13 @@ private struct ChapterPageView: View {
             ScrollView {
                 // Hidden anchor finds the parent UIScrollView and observes
                 // its contentOffset for rubber-band overscroll detection.
+                // When startAtBottom is true, also positions initial offset
+                // at the bottom of the content as soon as contentSize is known.
                 Color.clear.frame(height: 0).background(
                     ScrollOverscrollObserver(
                         onOverscrollBottom: onOverscrollBottom,
-                        onOverscrollTop: onOverscrollTop
+                        onOverscrollTop: onOverscrollTop,
+                        startAtBottom: startAtBottom
                     )
                 )
 
@@ -470,12 +480,13 @@ private struct ChapterScrollOffsetKey: PreferenceKey {
 private struct ScrollOverscrollObserver: UIViewRepresentable {
     let onOverscrollBottom: () -> Void
     let onOverscrollTop: () -> Void
+    let startAtBottom: Bool
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.isHidden = true
         DispatchQueue.main.async {
-            context.coordinator.attach(from: view)
+            context.coordinator.attach(from: view, startAtBottom: startAtBottom)
         }
         return view
     }
@@ -495,8 +506,10 @@ private struct ScrollOverscrollObserver: UIViewRepresentable {
     final class Coordinator: NSObject {
         var onOverscrollBottom: () -> Void
         var onOverscrollTop: () -> Void
-        private var observation: NSKeyValueObservation?
+        private var offsetObservation: NSKeyValueObservation?
+        private var sizeObservation: NSKeyValueObservation?
         private var hasTriggered = false
+        private var didPositionAtBottom = false
 
         init(onOverscrollBottom: @escaping () -> Void,
              onOverscrollTop: @escaping () -> Void) {
@@ -504,12 +517,18 @@ private struct ScrollOverscrollObserver: UIViewRepresentable {
             self.onOverscrollTop = onOverscrollTop
         }
 
-        func attach(from view: UIView) {
+        func attach(from view: UIView, startAtBottom: Bool) {
             var v: UIView? = view.superview
             while let current = v {
                 if let scrollView = current as? UIScrollView {
-                    observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
-                        guard let self = self, !self.hasTriggered else { return }
+                    if startAtBottom {
+                        positionAtBottom(scrollView: scrollView)
+                    }
+                    offsetObservation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+                        guard let self = self else { return }
+                        // Suppress overscroll triggers until initial bottom positioning is settled
+                        if startAtBottom && !self.didPositionAtBottom { return }
+                        guard !self.hasTriggered else { return }
                         let maxOffset = max(sv.contentSize.height - sv.bounds.height, 0)
                         let bottomOverscroll = sv.contentOffset.y - maxOffset
                         let topOverscroll    = -sv.contentOffset.y
@@ -527,6 +546,27 @@ private struct ScrollOverscrollObserver: UIViewRepresentable {
                     return
                 }
                 v = current.superview
+            }
+        }
+
+        private func positionAtBottom(scrollView: UIScrollView) {
+            // Snap to bottom now if content is already laid out, otherwise
+            // observe contentSize and snap as soon as it is.
+            let maxY = scrollView.contentSize.height - scrollView.bounds.height
+            if maxY > 0 {
+                scrollView.setContentOffset(CGPoint(x: 0, y: maxY), animated: false)
+                didPositionAtBottom = true
+                return
+            }
+            sizeObservation = scrollView.observe(\.contentSize, options: [.new]) { [weak self] sv, _ in
+                guard let self = self, !self.didPositionAtBottom else { return }
+                let m = sv.contentSize.height - sv.bounds.height
+                if m > 0 {
+                    sv.setContentOffset(CGPoint(x: 0, y: m), animated: false)
+                    self.didPositionAtBottom = true
+                    self.sizeObservation?.invalidate()
+                    self.sizeObservation = nil
+                }
             }
         }
     }
