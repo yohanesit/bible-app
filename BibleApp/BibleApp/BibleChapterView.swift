@@ -20,9 +20,6 @@ struct BibleChapterView: View {
     var onNextChapter: () -> Void = {}
 
     @State private var lastScrollOffset: CGFloat = 0
-    @State private var contentHeight: CGFloat = 0
-    @State private var viewportHeight: CGFloat = 0
-    @State private var didTriggerNextChapter = false
 
     init(isReadingState: Binding<Bool>, topContentInset: CGFloat,
          onTap: @escaping () -> Void = {},
@@ -38,7 +35,9 @@ struct BibleChapterView: View {
 
         GeometryReader { scrollGeo in
             ScrollView {
-                Color.clear.frame(height: 0).background(ScrollBounceDisabler())
+                Color.clear.frame(height: 0).background(
+                    ScrollOverscrollObserver(onOverscroll: onNextChapter)
+                )
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer().frame(height: topContentInset)
 
@@ -105,16 +104,13 @@ struct BibleChapterView: View {
                 .frame(maxWidth: .infinity, minHeight: scrollGeo.size.height, alignment: .topLeading)
                 .background(
                     GeometryReader { geo in
-                        Color.clear
-                            .preference(key: ChapterScrollOffsetKey.self,
-                                        value: -geo.frame(in: .named("chapterScroll")).minY)
-                            .preference(key: ChapterContentHeightKey.self,
-                                        value: geo.size.height)
+                        Color.clear.preference(
+                            key: ChapterScrollOffsetKey.self,
+                            value: -geo.frame(in: .named("chapterScroll")).minY
+                        )
                     }
                 )
             }
-            .onAppear { viewportHeight = scrollGeo.size.height }
-            .onChange(of: scrollGeo.size.height) { _, h in viewportHeight = h }
         }
         .id(chapterScrollResetKey)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -122,22 +118,7 @@ struct BibleChapterView: View {
         .onPreferenceChange(ChapterScrollOffsetKey.self) { offset in
             updateReadingState(scrollOffset: offset)
         }
-        .onPreferenceChange(ChapterContentHeightKey.self) { contentHeight = $0 }
-        .onChange(of: chapterScrollResetKey) { _, _ in didTriggerNextChapter = false }
         .simultaneousGesture(TapGesture().onEnded { onTap() })
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 30, coordinateSpace: .local)
-                .onEnded { value in
-                    guard !didTriggerNextChapter, contentHeight > 0 else { return }
-                    // Negative height = finger moved up = scroll-down intent
-                    guard value.translation.height < -50 else { return }
-                    let maxScroll = max(contentHeight - viewportHeight, 0)
-                    guard lastScrollOffset >= maxScroll - 40 else { return }
-                    didTriggerNextChapter = true
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    onNextChapter()
-                }
-        )
         .background(colors.background)
         .scrollContentBackground(.hidden)
     }
@@ -348,33 +329,62 @@ private struct ChapterScrollOffsetKey: PreferenceKey {
     }
 }
 
-private struct ChapterContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
+// MARK: - Scroll overscroll observer
+//
+// Observes the underlying UIScrollView's contentOffset via KVO so we can
+// detect rubber-band overscroll past the bottom (which SwiftUI's preference
+// keys don't expose). When overscroll exceeds the threshold once per
+// chapter, fires onOverscroll with haptic.
 
-// MARK: - Scroll bounce disabler
+private struct ScrollOverscrollObserver: UIViewRepresentable {
+    let onOverscroll: () -> Void
 
-private struct ScrollBounceDisabler: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.isHidden = true
-        DispatchQueue.main.async { Self.disableBounce(in: view) }
+        DispatchQueue.main.async {
+            context.coordinator.attach(from: view)
+        }
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.onOverscroll = onOverscroll
+    }
 
-    private static func disableBounce(in view: UIView) {
-        var v: UIView? = view.superview
-        while let current = v {
-            if let scrollView = current as? UIScrollView {
-                scrollView.bounces = false
-                return
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onOverscroll: onOverscroll)
+    }
+
+    final class Coordinator: NSObject {
+        var onOverscroll: () -> Void
+        private var observation: NSKeyValueObservation?
+        private var hasTriggered = false
+
+        init(onOverscroll: @escaping () -> Void) {
+            self.onOverscroll = onOverscroll
+        }
+
+        func attach(from view: UIView) {
+            var v: UIView? = view.superview
+            while let current = v {
+                if let scrollView = current as? UIScrollView {
+                    observation = scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+                        guard let self = self else { return }
+                        let maxOffset = max(sv.contentSize.height - sv.bounds.height, 0)
+                        let overscroll = sv.contentOffset.y - maxOffset
+                        if overscroll > 60 && !self.hasTriggered {
+                            self.hasTriggered = true
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            self.onOverscroll()
+                        } else if overscroll < 10 {
+                            self.hasTriggered = false
+                        }
+                    }
+                    return
+                }
+                v = current.superview
             }
-            v = current.superview
         }
     }
 }
