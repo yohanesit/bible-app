@@ -144,7 +144,7 @@ struct ContentView: View {
                                 isReadingState: $isReadingState,
                                 topContentInset: topContentInset,
                                 onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
-                                onVisibleChapterChange: { bookName, chapter in
+                                onChapterChange: { bookName, chapter in
                                     handleVisibleChapterChange(bookName: bookName, chapter: chapter)
                                 }
                             )
