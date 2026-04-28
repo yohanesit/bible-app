@@ -6,6 +6,7 @@
 //  Verses marked with p:true in the data start a new visible paragraph.
 
 import SwiftUI
+import UIKit
 
 struct BibleChapterView: View {
     @Environment(\.appTheme)    private var theme
@@ -16,13 +17,20 @@ struct BibleChapterView: View {
     @Binding var isReadingState: Bool
     var topContentInset: CGFloat
     var onTap: () -> Void = {}
+    var onNextChapter: () -> Void = {}
 
     @State private var lastScrollOffset: CGFloat = 0
+    @State private var contentHeight: CGFloat = 0
+    @State private var viewportHeight: CGFloat = 0
+    @State private var didTriggerNextChapter = false
 
-    init(isReadingState: Binding<Bool>, topContentInset: CGFloat, onTap: @escaping () -> Void = {}) {
+    init(isReadingState: Binding<Bool>, topContentInset: CGFloat,
+         onTap: @escaping () -> Void = {},
+         onNextChapter: @escaping () -> Void = {}) {
         _isReadingState = isReadingState
         self.topContentInset = topContentInset
         self.onTap = onTap
+        self.onNextChapter = onNextChapter
     }
 
     var body: some View {
@@ -45,16 +53,16 @@ struct BibleChapterView: View {
                     case .loaded(let bookName, let chapter, let verses):
                         ChapterHeaderView(bookName: bookName, chapter: chapter,
                                           screenHeight: scrollGeo.size.height)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, hPageMargin)
 
                         ChapterVersesView(verses: verses)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, hPageMargin)
 
                     // ── Book not in DB (needs sync) ──────────────────────────
                     case .empty(let bookName, let chapter):
                         ChapterHeaderView(bookName: bookName, chapter: chapter,
                                           screenHeight: scrollGeo.size.height)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, hPageMargin)
 
                         HStack(spacing: 10) {
                             Image(systemName: "arrow.down.circle")
@@ -69,7 +77,26 @@ struct BibleChapterView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(RoundedRectangle(cornerRadius: 8).fill(colors.surface))
                         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(colors.border, lineWidth: 1))
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, hPageMargin)
+                    }
+
+                    // ── Next chapter hint ────────────────────────────────────
+                    if let label = nextChapterLabel {
+                        VStack(spacing: 10) {
+                            Rectangle()
+                                .fill(colors.border)
+                                .frame(width: 48, height: 0.5)
+                            HStack(spacing: 6) {
+                                Text(label)
+                                    .font(ThemeFont.buttonLargeRegular)
+                                    .foregroundStyle(colors.textSecondary)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(colors.textSecondary.opacity(0.5))
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 40)
                     }
 
                     Spacer().frame(height: 100)
@@ -77,13 +104,16 @@ struct BibleChapterView: View {
                 .frame(maxWidth: .infinity, minHeight: scrollGeo.size.height, alignment: .topLeading)
                 .background(
                     GeometryReader { geo in
-                        Color.clear.preference(
-                            key: ChapterScrollOffsetKey.self,
-                            value: -geo.frame(in: .named("chapterScroll")).minY
-                        )
+                        Color.clear
+                            .preference(key: ChapterScrollOffsetKey.self,
+                                        value: -geo.frame(in: .named("chapterScroll")).minY)
+                            .preference(key: ChapterContentHeightKey.self,
+                                        value: geo.size.height)
                     }
                 )
             }
+            .onAppear { viewportHeight = scrollGeo.size.height }
+            .onChange(of: scrollGeo.size.height) { _, h in viewportHeight = h }
         }
         .id(chapterScrollResetKey)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -91,6 +121,8 @@ struct BibleChapterView: View {
         .onPreferenceChange(ChapterScrollOffsetKey.self) { offset in
             updateReadingState(scrollOffset: offset)
         }
+        .onPreferenceChange(ChapterContentHeightKey.self) { contentHeight = $0 }
+        .onChange(of: chapterScrollResetKey) { _, _ in didTriggerNextChapter = false }
         .simultaneousGesture(TapGesture().onEnded { onTap() })
         .background(colors.background)
         .scrollContentBackground(.hidden)
@@ -101,12 +133,29 @@ struct BibleChapterView: View {
 
         let nearTop = scrollOffset <= 2
         let next: Bool = !nearTop
-
         if next != isReadingState {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 isReadingState = next
             }
         }
+
+        guard contentHeight > 0 else { return }
+        let maxScroll = max(contentHeight - viewportHeight, 0)
+        let overscroll = scrollOffset - maxScroll
+        if overscroll > 72 && !didTriggerNextChapter {
+            didTriggerNextChapter = true
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            onNextChapter()
+        } else if overscroll < 20 {
+            didTriggerNextChapter = false
+        }
+    }
+
+    private var nextChapterLabel: String? {
+        guard case .loaded(let bookName, let chapter, _) = provider.state,
+              let entry = BibleCatalog.entry(forName: bookName),
+              chapter < entry.chapterCount else { return nil }
+        return "\(bookName) \(chapter + 1)"
     }
 
     private var chapterScrollResetKey: String {
@@ -287,9 +336,16 @@ private struct ChapterVersesView: View {
     }
 }
 
-// MARK: - Scroll offset preference key
+// MARK: - Scroll offset preference keys
 
 private struct ChapterScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct ChapterContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()

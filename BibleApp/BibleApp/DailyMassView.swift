@@ -56,7 +56,7 @@ struct DailyMassView: View {
 
                     case .error(let message):
                         ErrorBannerView(message: message)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, hPageMargin)
                             .padding(.top, 40)
 
                     default:
@@ -78,19 +78,19 @@ struct DailyMassView: View {
                                 Spacer(minLength: 40)
                             }
                             .frame(minHeight: scrollGeo.size.height * 0.44)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, hPageMargin)
 
                             // ── Sync needed banner (overlay, non-blocking) ───
                             if case .needsSync = provider.state {
                                 SyncNeededBannerView()
-                                    .padding(.horizontal, 24)
+                                    .padding(.horizontal, hPageMargin)
                                     .padding(.bottom, 24)
                             }
 
                             // ── Offline indicator ────────────────────────────
                             if case .offline = provider.state {
                                 OfflineBannerView()
-                                    .padding(.horizontal, 24)
+                                    .padding(.horizontal, hPageMargin)
                                     .padding(.bottom, 24)
                             }
 
@@ -105,13 +105,13 @@ struct DailyMassView: View {
                                 }()
 
                                 ReadingView(reading: reading, lagumisaRefrain: lagumisaRefrain)
-                                    .padding(.horizontal, 24)
+                                    .padding(.horizontal, hPageMargin)
                                     .padding(.vertical, 32)
 
                                 if reading.id != day.readings.last?.id {
                                     Divider()
                                         .overlay(colors.border)
-                                        .padding(.horizontal, 24)
+                                        .padding(.horizontal, hPageMargin)
                                 }
                             }
                         }

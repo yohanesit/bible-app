@@ -1,4 +1,9 @@
 import SwiftUI
+import UIKit
+
+// MARK: - Layout
+
+var hPageMargin: CGFloat { UIDevice.current.userInterfaceIdiom == .pad ? 48 : 24 }
 
 // MARK: - Theme
 

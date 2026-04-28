@@ -143,7 +143,8 @@ struct ContentView: View {
                             BibleChapterView(
                                 isReadingState: $isReadingState,
                                 topContentInset: topContentInset,
-                                onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
+                                onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
+                                onNextChapter: { triggerNextChapter() }
                             )
                             .environment(chapterProvider)
                         }
@@ -444,6 +445,15 @@ struct ContentView: View {
               let chStr = selectedRightLabel,
               let chapter = Int(chStr) else { return }
         chapterProvider.load(bookName: name, chapter: chapter)
+    }
+
+    private func triggerNextChapter() {
+        guard case .book(let name) = leftSelection,
+              let chStr = selectedRightLabel,
+              let chapter = Int(chStr),
+              let entry = BibleCatalog.entry(forName: name),
+              chapter < entry.chapterCount else { return }
+        selectedRightLabel = "\(chapter + 1)"
     }
 
     private func dateFromSelectedLabel() -> Date? {

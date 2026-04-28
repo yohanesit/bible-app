@@ -88,7 +88,7 @@ struct AcknowledgementsView: View {
                 .background(Color.white.opacity(mode == .day ? 1 : 0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, hPageMargin)
             .padding(.bottom, 48)
         }
         .background(colors.surface)
