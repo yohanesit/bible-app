@@ -38,6 +38,7 @@ struct BibleChapterView: View {
 
         GeometryReader { scrollGeo in
             ScrollView {
+                Color.clear.frame(height: 0).background(ScrollBounceDisabler())
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer().frame(height: topContentInset)
 
@@ -351,5 +352,29 @@ private struct ChapterContentHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+// MARK: - Scroll bounce disabler
+
+private struct ScrollBounceDisabler: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isHidden = true
+        DispatchQueue.main.async { Self.disableBounce(in: view) }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    private static func disableBounce(in view: UIView) {
+        var v: UIView? = view.superview
+        while let current = v {
+            if let scrollView = current as? UIScrollView {
+                scrollView.bounces = false
+                return
+            }
+            v = current.superview
+        }
     }
 }
