@@ -148,13 +148,11 @@ struct ContentView: View {
                             .environment(\.appSpacing, spacing)
                             .scrollDisabled(scrolledID == .left)
 
-                            if drawerProgress > 0.001 {
-                                Rectangle()
-                                    .fill(colors.background.opacity(Double(drawerProgress) * 0.70))
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { closeDrawer() }
-                                    .allowsHitTesting(scrolledID == .left)
-                            }
+                            Color.black
+                                .opacity(Double(drawerProgress) * 0.35)
+                                .contentShape(Rectangle())
+                                .onTapGesture { closeDrawer() }
+                                .allowsHitTesting(scrolledID == .left)
                         }
                         .frame(width: W)
                         .id(DrawerPage.main)
