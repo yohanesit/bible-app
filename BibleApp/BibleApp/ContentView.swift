@@ -311,20 +311,17 @@ struct ContentView: View {
 
     // MARK: - Drawer gesture
     private func drawerDragGesture(leftW: CGFloat) -> some Gesture {
-        let openEdgeWidth: CGFloat = 24
-        let axisMinDistance: CGFloat = 10
-        let axisLockRatio: CGFloat = 1.2
-        let openThresholdProgress: CGFloat = 0.55
+        let axisMinDistance: CGFloat = 6
+        let axisLockRatio: CGFloat = 1.15
+        let openThresholdProgress: CGFloat = 0.5
         let closeThresholdProgress: CGFloat = 0.45
         // Approximate fling intent from predicted delta. Positive opens, negative closes.
         let flingDeltaThreshold: CGFloat = 120
         let predictionWeight: CGFloat = 0.28
 
-        return DragGesture(minimumDistance: 8, coordinateSpace: .local)
+        return DragGesture(minimumDistance: 4, coordinateSpace: .local)
             .onChanged { value in
                 guard !showPreferences else { return }
-                // Opening must start at the leading edge to avoid stealing vertical scrolls.
-                if currentPane == .center && value.startLocation.x > openEdgeWidth { return }
                 if !drawerDragLockedHorizontal && !drawerDragLockedVertical {
                     let absX = abs(value.translation.width)
                     let absY = abs(value.translation.height)
@@ -349,10 +346,6 @@ struct ContentView: View {
                     drawerDragLockedVertical = false
                 }
                 guard !showPreferences else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
-                    return
-                }
-                if currentPane == .center && value.startLocation.x > openEdgeWidth {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
                     return
                 }
