@@ -26,8 +26,9 @@ struct ContentView: View {
     @State private var showAppSettings = false
     /// True while reading (scroll down or tap); hides bottom bar and status bar.
     @State private var isReadingState = false
-    @State private var dragDx: CGFloat = 0
-    @State private var isDraggingPane = false
+    @State private var drawerDragDx: CGFloat = 0
+    @State private var drawerDragLockedHorizontal = false
+    @State private var drawerDragLockedVertical = false
 
     @State private var readingProvider = DailyReadingProvider()
     @State private var chapterProvider = BibleChapterProvider()
@@ -80,18 +81,18 @@ struct ContentView: View {
             let leftW = W * 0.88
 
             let colors = Colors.theme(currentTheme, mode: resolvedMode)
-            let drawerOffset = drawerOffsetX(leftW: leftW)
-            let overlayOpacity = mainContentOverlayOpacity(leftW: leftW)
+            let mainOffset = mainSurfaceOffsetX(leftW: leftW)
+            let drawerProgress = drawerProgress(leftW: leftW)
             let topContentInset: CGFloat = 0
 
             ZStack {
                 // Full-screen base. Acts as a safety fill behind any spring overshoot.
                 colors.background.ignoresSafeArea()
 
-                // Drawer: a single rigid HStack of [left pane | main surface].
-                // Translating this HStack moves both panes together at 1:1 — no
-                // parallax desync, no zIndex juggling, no offset/frame mismatch.
-                HStack(spacing: 0) {
+                // Drawer rebuilt from scratch:
+                // - Left pane sits underneath.
+                // - Main surface slides horizontally from 0...leftW.
+                ZStack(alignment: .leading) {
                     LeftPaneView(
                         selection: $leftSelection,
                         selectedLabel: $selectedRightLabel,
@@ -100,7 +101,7 @@ struct ContentView: View {
                         onOpenAppSettings: {
                             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                                 currentPane = .center
-                                dragDx = 0
+                                drawerDragDx = 0
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                                 showAppSettings = true
@@ -141,22 +142,15 @@ struct ContentView: View {
                         .environment(\.appMode,  resolvedMode)
                         .environment(\.appTextSize, textSize)
                         .environment(\.appSpacing, spacing)
-                        // Lock inner scroll while the pane is open. We deliberately
-                        // do NOT include `isDraggingPane` here — toggling
-                        // scrollDisabled mid-gesture cancels the in-flight drag,
-                        // which freezes the drawer on slow swipes.
+                        // Keep inner scroll disabled only in the fully open state.
                         .scrollDisabled(currentPane == .left)
 
-                        // Dim + close target. Always present when pane is open or
-                        // mid-drag so the close DragGesture has a stable host view
-                        // (won't be torn down mid-drag as opacity decreases).
-                        if overlayOpacity > 0.001 || currentPane == .left {
+                        // Scrim tracks drawer progress and closes on tap.
+                        if drawerProgress > 0.001 {
                             Rectangle()
-                                .fill(colors.background.opacity(overlayOpacity))
+                                .fill(colors.background.opacity(Double(drawerProgress) * 0.70))
                                 .contentShape(Rectangle())
                                 .onTapGesture { dismissPaneToCenter() }
-                                .gesture(closeDragGesture(leftW: leftW))
-                                .allowsHitTesting(currentPane == .left || isDraggingPane)
                         }
 
                         // Bottom navigation bar — slides with the main surface, hidden in reading state.
@@ -216,12 +210,10 @@ struct ContentView: View {
                         }
                     }
                     .frame(width: W)
-                    // Open-pull gesture lives on the main surface only. Non-simultaneous
-                    // so the inner ScrollView owns vertical pans without contention.
-                    .gesture(openDragGesture(leftW: leftW))
+                    .contentShape(Rectangle())
+                    .offset(x: mainOffset)
+                    .gesture(drawerDragGesture(leftW: leftW))
                 }
-                .frame(width: leftW + W, alignment: .leading)
-                .offset(x: drawerOffset)
                 .frame(width: W, alignment: .leading)
                 .clipped()
             }
@@ -303,94 +295,64 @@ struct ContentView: View {
 
     private func clamp(_ x: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { min(max(x, lo), hi) }
 
-    /// Translation applied to the [leftPane | main] HStack.
-    /// Closed: -leftW (left pane off-screen left, main fills screen).
-    /// Open:   0       (left pane fills screen, main pushed off to the right).
-    private func drawerOffsetX(leftW: CGFloat) -> CGFloat {
-        let base: CGFloat = (currentPane == .left) ? 0 : -leftW
-        let drag: CGFloat = isDraggingPane ? dragDx : 0
-        return clamp(base + drag, -leftW, 0)
+    /// Main surface translation.
+    /// Closed: 0
+    /// Open:   leftW
+    private func mainSurfaceOffsetX(leftW: CGFloat) -> CGFloat {
+        let base: CGFloat = (currentPane == .left) ? leftW : 0
+        return clamp(base + drawerDragDx, 0, leftW)
     }
 
-    /// 0 when fully closed, 0.70 when fully open. Linear with drawer position.
-    private func mainContentOverlayOpacity(leftW: CGFloat) -> Double {
-        let maxDim: Double = 0.70
-        let openness = (drawerOffsetX(leftW: leftW) + leftW) / leftW
-        return Double(clamp(openness, 0, 1)) * maxDim
+    /// 0 when closed, 1 when fully open.
+    private func drawerProgress(leftW: CGFloat) -> CGFloat {
+        guard leftW > 0 else { return 0 }
+        return clamp(mainSurfaceOffsetX(leftW: leftW) / leftW, 0, 1)
     }
 
-    // MARK: - Drawer gestures
-
-    /// Open-pull. Lives on the main surface only. Disambiguates against vertical
-    /// scroll using a width/height ratio so the inner ScrollView keeps ownership
-    /// of vertical pans without contention.
-    private func openDragGesture(leftW: CGFloat) -> some Gesture {
+    // MARK: - Drawer gesture
+    private func drawerDragGesture(leftW: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 guard !showPreferences else { return }
-                guard currentPane == .center else { return }
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                let dx = clamp(value.translation.width, 0, leftW)
-                isDraggingPane = true
-                withTransaction(Transaction(animation: nil)) { dragDx = dx }
+                if !drawerDragLockedHorizontal && !drawerDragLockedVertical {
+                    let absX = abs(value.translation.width)
+                    let absY = abs(value.translation.height)
+                    guard max(absX, absY) > 6 else { return }
+                    if absX > absY {
+                        drawerDragLockedHorizontal = true
+                    } else {
+                        drawerDragLockedVertical = true
+                        return
+                    }
+                }
+                guard drawerDragLockedHorizontal else { return }
+                let base: CGFloat = (currentPane == .left) ? leftW : 0
+                let proposed = clamp(base + value.translation.width, 0, leftW)
+                withTransaction(Transaction(animation: nil)) {
+                    drawerDragDx = proposed - base
+                }
             }
             .onEnded { value in
-                defer { isDraggingPane = false }
+                defer {
+                    drawerDragLockedHorizontal = false
+                    drawerDragLockedVertical = false
+                }
                 guard !showPreferences else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
                     return
                 }
-                guard currentPane == .center else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                guard drawerDragLockedHorizontal else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
                     return
                 }
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
-                    return
-                }
-                let projected = value.translation.width
-                    + (value.predictedEndTranslation.width - value.translation.width) * 0.3
-                let threshold = leftW * 0.35
+                let base: CGFloat = (currentPane == .left) ? leftW : 0
+                let projected = base
+                    + value.translation.width
+                    + (value.predictedEndTranslation.width - value.translation.width) * 0.25
+                let shouldOpen = projected > leftW * 0.5
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    if projected > threshold { currentPane = .left }
-                    dragDx = 0
-                }
-            }
-    }
-
-    /// Close-pull. Lives on the dim overlay above the visible main strip when
-    /// the pane is open. Does nothing on the left pane itself, so the pane's
-    /// own ScrollView keeps full ownership of its gestures.
-    private func closeDragGesture(leftW: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .local)
-            .onChanged { value in
-                guard !showPreferences else { return }
-                guard currentPane == .left else { return }
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                let dx = clamp(value.translation.width, -leftW, 0)
-                isDraggingPane = true
-                withTransaction(Transaction(animation: nil)) { dragDx = dx }
-            }
-            .onEnded { value in
-                defer { isDraggingPane = false }
-                guard !showPreferences else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
-                    return
-                }
-                guard currentPane == .left else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
-                    return
-                }
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
-                    return
-                }
-                let projected = value.translation.width
-                    + (value.predictedEndTranslation.width - value.translation.width) * 0.3
-                let threshold = -leftW * 0.35
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    if projected < threshold { currentPane = .center }
-                    dragDx = 0
+                    currentPane = shouldOpen ? .left : .center
+                    drawerDragDx = 0
                 }
             }
     }
@@ -398,7 +360,7 @@ struct ContentView: View {
     private func dismissPaneToCenter() {
         withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
             currentPane = .center
-            dragDx = 0
+            drawerDragDx = 0
         }
     }
 
