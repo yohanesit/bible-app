@@ -323,7 +323,7 @@ struct ContentView: View {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 guard currentPane == .center else { return }
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
                 let dx = clamp(value.translation.width, 0, leftW)
                 isDraggingPane = true
                 withTransaction(Transaction(animation: nil)) { dragDx = dx }
@@ -334,7 +334,7 @@ struct ContentView: View {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
                     return
                 }
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else {
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
                     return
                 }
@@ -355,7 +355,7 @@ struct ContentView: View {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
                 guard currentPane == .left else { return }
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
                 let dx = clamp(value.translation.width, -leftW, 0)
                 isDraggingPane = true
                 withTransaction(Transaction(animation: nil)) { dragDx = dx }
@@ -366,7 +366,7 @@ struct ContentView: View {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
                     return
                 }
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else {
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
                     return
                 }
