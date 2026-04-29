@@ -311,14 +311,25 @@ struct ContentView: View {
 
     // MARK: - Drawer gesture
     private func drawerDragGesture(leftW: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+        let openEdgeWidth: CGFloat = 24
+        let axisMinDistance: CGFloat = 10
+        let axisLockRatio: CGFloat = 1.2
+        let openThresholdProgress: CGFloat = 0.55
+        let closeThresholdProgress: CGFloat = 0.45
+        // Approximate fling intent from predicted delta. Positive opens, negative closes.
+        let flingDeltaThreshold: CGFloat = 120
+        let predictionWeight: CGFloat = 0.28
+
+        return DragGesture(minimumDistance: 8, coordinateSpace: .local)
             .onChanged { value in
                 guard !showPreferences else { return }
+                // Opening must start at the leading edge to avoid stealing vertical scrolls.
+                if currentPane == .center && value.startLocation.x > openEdgeWidth { return }
                 if !drawerDragLockedHorizontal && !drawerDragLockedVertical {
                     let absX = abs(value.translation.width)
                     let absY = abs(value.translation.height)
-                    guard max(absX, absY) > 6 else { return }
-                    if absX > absY {
+                    guard max(absX, absY) > axisMinDistance else { return }
+                    if absX > absY * axisLockRatio {
                         drawerDragLockedHorizontal = true
                     } else {
                         drawerDragLockedVertical = true
@@ -341,15 +352,29 @@ struct ContentView: View {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
                     return
                 }
+                if currentPane == .center && value.startLocation.x > openEdgeWidth {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
+                    return
+                }
                 guard drawerDragLockedHorizontal else {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
                     return
                 }
                 let base: CGFloat = (currentPane == .left) ? leftW : 0
+                let predictedDelta = (value.predictedEndTranslation.width - value.translation.width) * predictionWeight
                 let projected = base
                     + value.translation.width
-                    + (value.predictedEndTranslation.width - value.translation.width) * 0.25
-                let shouldOpen = projected > leftW * 0.5
+                    + predictedDelta
+                let projectedProgress = clamp(projected / leftW, 0, 1)
+                let shouldOpen: Bool
+                if predictedDelta > flingDeltaThreshold {
+                    shouldOpen = true
+                } else if predictedDelta < -flingDeltaThreshold {
+                    shouldOpen = false
+                } else {
+                    let threshold = (currentPane == .left) ? closeThresholdProgress : openThresholdProgress
+                    shouldOpen = projectedProgress > threshold
+                }
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
                     currentPane = shouldOpen ? .left : .center
                     drawerDragDx = 0
