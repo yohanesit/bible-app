@@ -1,11 +1,21 @@
 import SwiftUI
 import UIKit
 
-enum Pane { case left, center }
-
 enum LeftSelection: Equatable {
     case daily
     case book(String)
+}
+
+private enum DrawerPage: Hashable {
+    case left
+    case main
+}
+
+private struct DrawerScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
 }
 
 struct ContentView: View {
@@ -17,7 +27,7 @@ struct ContentView: View {
     @AppStorage("bibleSource") private var bibleSourceRaw: String = BibleSource.alkitab.rawValue
     @AppStorage("lectionaryRegion") private var lectionaryRegion: String = "ID"
 
-    @State private var currentPane: Pane = .center
+    @State private var scrolledID: DrawerPage? = .main
     @State private var leftSelection: LeftSelection = .daily
     @State private var selectedRightLabel: String? = Calendar.current.startOfDay(for: Date())
         .formatted(.dateTime.day().month(.wide))
@@ -26,9 +36,8 @@ struct ContentView: View {
     @State private var showAppSettings = false
     /// True while reading (scroll down or tap); hides bottom bar and status bar.
     @State private var isReadingState = false
-    @State private var drawerDragDx: CGFloat = 0
-    @State private var drawerDragLockedHorizontal = false
-    @State private var drawerDragLockedVertical = false
+    /// 0 when fully closed, 1 when fully open. Continuously tracks scroll offset.
+    @State private var drawerProgress: CGFloat = 0
 
     @State private var readingProvider = DailyReadingProvider()
     @State private var chapterProvider = BibleChapterProvider()
@@ -77,145 +86,159 @@ struct ContentView: View {
             let W = geo.size.width
             let topSafeArea = geo.safeAreaInsets.top
             let bottomSafeArea = geo.safeAreaInsets.bottom
-            // Fixed left pane width.
             let leftW = W * 0.88
 
             let colors = Colors.theme(currentTheme, mode: resolvedMode)
-            let mainOffset = mainSurfaceOffsetX(leftW: leftW)
-            let drawerProgress = drawerProgress(leftW: leftW)
             let topContentInset: CGFloat = 0
 
             ZStack {
                 // Full-screen base. Acts as a safety fill behind any spring overshoot.
                 colors.background.ignoresSafeArea()
 
-                // Drawer rebuilt from scratch:
-                // - Left pane sits underneath.
-                // - Main surface slides horizontally from 0...leftW.
-                ZStack(alignment: .leading) {
-                    LeftPaneView(
-                        selection: $leftSelection,
-                        selectedLabel: $selectedRightLabel,
-                        topSafeArea: topSafeArea,
-                        bottomSafeArea: bottomSafeArea,
-                        onOpenAppSettings: {
-                            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                currentPane = .center
-                                drawerDragDx = 0
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                showAppSettings = true
-                            }
-                        },
-                        onClose: { dismissPaneToCenter() }
-                    )
-                    .frame(width: leftW)
-                    .background(colors.surface)
-                    .environment(\.appTheme, currentTheme)
-                    .environment(\.appMode,  resolvedMode)
-                    .environment(\.appTextSize, textSize)
-
-                    ZStack(alignment: .top) {
-                        Group {
-                            switch leftSelection {
-                            case .daily:
-                                DailyMassView(
-                                    isReadingState: $isReadingState,
-                                    topContentInset: topContentInset,
-                                    onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
-                                )
-                                .environment(readingProvider)
-                            case .book:
-                                BibleChapterView(
-                                    isReadingState: $isReadingState,
-                                    topContentInset: topContentInset,
-                                    onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
-                                    onChapterChange: { bookName, chapter in
-                                        handleVisibleChapterChange(bookName: bookName, chapter: chapter)
-                                    }
-                                )
-                                .environment(chapterProvider)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // Drawer powered by a horizontal paging ScrollView. Native pan
+                // physics handle finger tracking, deceleration, and rubber-band.
+                ScrollView(.horizontal) {
+                    HStack(spacing: 0) {
+                        LeftPaneView(
+                            selection: $leftSelection,
+                            selectedLabel: $selectedRightLabel,
+                            topSafeArea: topSafeArea,
+                            bottomSafeArea: bottomSafeArea,
+                            onOpenAppSettings: {
+                                closeDrawer()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                    showAppSettings = true
+                                }
+                            },
+                            onClose: { closeDrawer() }
+                        )
+                        .frame(width: leftW)
+                        .background(colors.surface)
                         .environment(\.appTheme, currentTheme)
                         .environment(\.appMode,  resolvedMode)
                         .environment(\.appTextSize, textSize)
-                        .environment(\.appSpacing, spacing)
-                        // Keep inner scroll disabled only in the fully open state.
-                        .scrollDisabled(currentPane == .left)
+                        .id(DrawerPage.left)
 
-                        // Scrim tracks drawer progress and closes on tap.
-                        if drawerProgress > 0.001 {
-                            Rectangle()
-                                .fill(colors.background.opacity(Double(drawerProgress) * 0.70))
-                                .contentShape(Rectangle())
-                                .onTapGesture { dismissPaneToCenter() }
-                        }
-
-                        // Bottom navigation bar — slides with the main surface, hidden in reading state.
-                        if !isReadingState {
-                            VStack(spacing: 0) {
-                                Spacer(minLength: 0)
-                                BottomBar(
-                                    primaryTitle: topBarPrimaryTitle,
-                                    secondaryTitle: topBarSecondaryTitle,
-                                    bottomSafeArea: bottomSafeArea,
-                                    onOpenLeft: { togglePane(.left) },
-                                    onOpenRight: { togglePane(.left) },
-                                    onOpenThemeSettings: {
-                                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                            showPreferences = true
+                        ZStack(alignment: .top) {
+                            Group {
+                                switch leftSelection {
+                                case .daily:
+                                    DailyMassView(
+                                        isReadingState: $isReadingState,
+                                        topContentInset: topContentInset,
+                                        onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
+                                    )
+                                    .environment(readingProvider)
+                                case .book:
+                                    BibleChapterView(
+                                        isReadingState: $isReadingState,
+                                        topContentInset: topContentInset,
+                                        onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
+                                        onChapterChange: { bookName, chapter in
+                                            handleVisibleChapterChange(bookName: bookName, chapter: chapter)
                                         }
-                                    }
-                                )
-                                .environment(\.appTheme, currentTheme)
-                                .environment(\.appMode,  resolvedMode)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                        if showPreferences {
-                            Rectangle()
-                                .fill(colors.background.opacity(0.18))
-                                .ignoresSafeArea()
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                        showPreferences = false
-                                    }
+                                    )
+                                    .environment(chapterProvider)
                                 }
-                                .transition(.opacity)
-                                .zIndex(20)
-
-                            VStack(spacing: 0) {
-                                Spacer(minLength: 0)
-                                PreferencesView(
-                                    colorSchemePreference: colorSchemePreferenceBinding,
-                                    currentTheme: currentThemeBinding,
-                                    textSize: textSizeBinding,
-                                    spacing: spacingBinding,
-                                    onClose: {
-                                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                            showPreferences = false
-                                        }
-                                    }
-                                )
-                                .environment(\.appTheme, currentTheme)
-                                .environment(\.appMode,  resolvedMode)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
                             }
-                            .ignoresSafeArea(edges: .bottom)
-                            .zIndex(21)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                            .environment(\.appTheme, currentTheme)
+                            .environment(\.appMode,  resolvedMode)
+                            .environment(\.appTextSize, textSize)
+                            .environment(\.appSpacing, spacing)
+                            .scrollDisabled(scrolledID == .left)
+
+                            if drawerProgress > 0.001 {
+                                Rectangle()
+                                    .fill(colors.background.opacity(Double(drawerProgress) * 0.70))
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { closeDrawer() }
+                                    .allowsHitTesting(scrolledID == .left)
+                            }
                         }
+                        .frame(width: W)
+                        .id(DrawerPage.main)
                     }
-                    .frame(width: W)
-                    .contentShape(Rectangle())
-                    .offset(x: mainOffset)
-                    .gesture(drawerDragGesture(leftW: leftW))
+                    .scrollTargetLayout()
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: DrawerScrollOffsetKey.self,
+                                value: -proxy.frame(in: .named("drawerScroll")).origin.x
+                            )
+                        }
+                    )
                 }
-                .frame(width: W, alignment: .leading)
-                .clipped()
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+                .scrollPosition(id: $scrolledID)
+                .scrollDisabled(showPreferences)
+                .coordinateSpace(name: "drawerScroll")
+                .onPreferenceChange(DrawerScrollOffsetKey.self) { offset in
+                    let progress = max(0, min(1, (leftW - offset) / max(leftW, 1)))
+                    if abs(progress - drawerProgress) > 0.0005 {
+                        drawerProgress = progress
+                    }
+                }
+
+                // Bottom bar pinned to the screen, fades out as drawer opens.
+                if !isReadingState {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        BottomBar(
+                            primaryTitle: topBarPrimaryTitle,
+                            secondaryTitle: topBarSecondaryTitle,
+                            bottomSafeArea: bottomSafeArea,
+                            onOpenLeft: { openDrawer() },
+                            onOpenRight: { openDrawer() },
+                            onOpenThemeSettings: {
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                    showPreferences = true
+                                }
+                            }
+                        )
+                        .environment(\.appTheme, currentTheme)
+                        .environment(\.appMode,  resolvedMode)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(1 - Double(drawerProgress))
+                    .allowsHitTesting(drawerProgress < 0.5 && !showPreferences)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if showPreferences {
+                    Rectangle()
+                        .fill(colors.background.opacity(0.18))
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                showPreferences = false
+                            }
+                        }
+                        .transition(.opacity)
+                        .zIndex(20)
+
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        PreferencesView(
+                            colorSchemePreference: colorSchemePreferenceBinding,
+                            currentTheme: currentThemeBinding,
+                            textSize: textSizeBinding,
+                            spacing: spacingBinding,
+                            onClose: {
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                    showPreferences = false
+                                }
+                            }
+                        )
+                        .environment(\.appTheme, currentTheme)
+                        .environment(\.appMode,  resolvedMode)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .ignoresSafeArea(edges: .bottom)
+                    .zIndex(21)
+                }
             }
             .onAppear {
                 applyBibleSource(bibleSourceRaw)
@@ -234,9 +257,6 @@ struct ContentView: View {
                 isReadingState = false
 
                 if case .book(let newBook) = new {
-                    // When switching books, keep an explicitly chosen chapter if it's valid
-                    // for the new book (e.g. user taps chapter 5 in another book).
-                    // Otherwise fall back to the first chapter.
                     let switchedBooks: Bool = {
                         if case .book(let oldBook) = old { return oldBook != newBook }
                         return true
@@ -253,7 +273,7 @@ struct ContentView: View {
                 }
 
                 ensureDefaultRightSelection()
-                if currentPane == .left { dismissPaneToCenter() }
+                if scrolledID == .left { closeDrawer() }
                 if case .book = new { triggerLoadForChapter() }
             }
             .onChange(of: selectedRightLabel) { _, _ in
@@ -265,7 +285,7 @@ struct ContentView: View {
             .onChange(of: readingProvider.loadedMassDayTimeInterval) { _, _ in
                 syncRightPaneLabelFromMassDay()
             }
-            .onChange(of: currentPane) { oldValue, newValue in
+            .onChange(of: scrolledID) { oldValue, newValue in
                 guard oldValue != newValue else { return }
                 if newValue == .left {
                     playPaneOpenHaptic()
@@ -278,107 +298,26 @@ struct ContentView: View {
                     .environment(\.appMode,  resolvedMode)
             }
             .onChange(of: lectionaryRegion) { _, _ in
-                // Region changed — clear cache so today's reading reloads with the new region
                 readingProvider.clearCache()
                 Task { await readingProvider.loadDay(readingProvider.selectedDate) }
             }
-            // ignoresSafeArea on the ZStack (not on GeometryReader) so that
-            // geo.safeAreaInsets.top above correctly reports the real device
-            // inset instead of returning 0.
             .ignoresSafeArea(.all)
         }
         .preferredColorScheme(preferredInterfaceScheme)
         .statusBarHidden(isReadingState)
     }
 
-    // MARK: - Motion helpers
+    // MARK: - Drawer commands
 
-    private func clamp(_ x: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { min(max(x, lo), hi) }
-
-    /// Main surface translation.
-    /// Closed: 0
-    /// Open:   leftW
-    private func mainSurfaceOffsetX(leftW: CGFloat) -> CGFloat {
-        let base: CGFloat = (currentPane == .left) ? leftW : 0
-        return clamp(base + drawerDragDx, 0, leftW)
-    }
-
-    /// 0 when closed, 1 when fully open.
-    private func drawerProgress(leftW: CGFloat) -> CGFloat {
-        guard leftW > 0 else { return 0 }
-        return clamp(mainSurfaceOffsetX(leftW: leftW) / leftW, 0, 1)
-    }
-
-    // MARK: - Drawer gesture
-    private func drawerDragGesture(leftW: CGFloat) -> some Gesture {
-        let axisMinDistance: CGFloat = 6
-        let axisLockRatio: CGFloat = 1.15
-        let openThresholdProgress: CGFloat = 0.5
-        let closeThresholdProgress: CGFloat = 0.45
-        // Approximate fling intent from predicted delta. Positive opens, negative closes.
-        let flingDeltaThreshold: CGFloat = 120
-        let predictionWeight: CGFloat = 0.28
-
-        return DragGesture(minimumDistance: 4, coordinateSpace: .local)
-            .onChanged { value in
-                guard !showPreferences else { return }
-                if !drawerDragLockedHorizontal && !drawerDragLockedVertical {
-                    let absX = abs(value.translation.width)
-                    let absY = abs(value.translation.height)
-                    guard max(absX, absY) > axisMinDistance else { return }
-                    if absX > absY * axisLockRatio {
-                        drawerDragLockedHorizontal = true
-                    } else {
-                        drawerDragLockedVertical = true
-                        return
-                    }
-                }
-                guard drawerDragLockedHorizontal else { return }
-                let base: CGFloat = (currentPane == .left) ? leftW : 0
-                let proposed = clamp(base + value.translation.width, 0, leftW)
-                withTransaction(Transaction(animation: nil)) {
-                    drawerDragDx = proposed - base
-                }
-            }
-            .onEnded { value in
-                defer {
-                    drawerDragLockedHorizontal = false
-                    drawerDragLockedVertical = false
-                }
-                guard !showPreferences else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
-                    return
-                }
-                guard drawerDragLockedHorizontal else {
-                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { drawerDragDx = 0 }
-                    return
-                }
-                let base: CGFloat = (currentPane == .left) ? leftW : 0
-                let predictedDelta = (value.predictedEndTranslation.width - value.translation.width) * predictionWeight
-                let projected = base
-                    + value.translation.width
-                    + predictedDelta
-                let projectedProgress = clamp(projected / leftW, 0, 1)
-                let shouldOpen: Bool
-                if predictedDelta > flingDeltaThreshold {
-                    shouldOpen = true
-                } else if predictedDelta < -flingDeltaThreshold {
-                    shouldOpen = false
-                } else {
-                    let threshold = (currentPane == .left) ? closeThresholdProgress : openThresholdProgress
-                    shouldOpen = projectedProgress > threshold
-                }
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                    currentPane = shouldOpen ? .left : .center
-                    drawerDragDx = 0
-                }
-            }
-    }
-
-    private func dismissPaneToCenter() {
+    private func openDrawer() {
         withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-            currentPane = .center
-            drawerDragDx = 0
+            scrolledID = .left
+        }
+    }
+
+    private func closeDrawer() {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            scrolledID = .main
         }
     }
 
@@ -397,12 +336,6 @@ struct ContentView: View {
             return selectedRightLabel ?? Date().formatted(.dateTime.day().month(.wide))
         case .book:
             return selectedRightLabel
-        }
-    }
-
-    private func togglePane(_ pane: Pane) {
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-            currentPane = (currentPane == pane) ? .center : pane
         }
     }
 
