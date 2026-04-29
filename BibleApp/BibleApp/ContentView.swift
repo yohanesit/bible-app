@@ -181,49 +181,49 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
+                        if showPreferences {
+                            Rectangle()
+                                .fill(colors.background.opacity(0.18))
+                                .ignoresSafeArea()
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                        showPreferences = false
+                                    }
+                                }
+                                .transition(.opacity)
+                                .zIndex(20)
+
+                            VStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                PreferencesView(
+                                    colorSchemePreference: colorSchemePreferenceBinding,
+                                    currentTheme: currentThemeBinding,
+                                    textSize: textSizeBinding,
+                                    spacing: spacingBinding,
+                                    onClose: {
+                                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                            showPreferences = false
+                                        }
+                                    }
+                                )
+                                .environment(\.appTheme, currentTheme)
+                                .environment(\.appMode,  resolvedMode)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
+                            .ignoresSafeArea(edges: .bottom)
+                            .zIndex(21)
+                        }
                     }
                     .frame(width: W)
-                    .offset(y: showPreferences ? -96 : 0)
                     // Open-pull gesture lives on the main surface only. Non-simultaneous
                     // so the inner ScrollView owns vertical pans without contention.
                     .gesture(openDragGesture(leftW: leftW))
                 }
                 .frame(width: leftW + W, alignment: .leading)
                 .offset(x: drawerOffset)
-
-                if showPreferences {
-                    Rectangle()
-                        .fill(colors.background.opacity(0.18))
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                showPreferences = false
-                            }
-                        }
-                        .transition(.opacity)
-                        .zIndex(20)
-
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        PreferencesView(
-                            colorSchemePreference: colorSchemePreferenceBinding,
-                            currentTheme: currentThemeBinding,
-                            textSize: textSizeBinding,
-                            spacing: spacingBinding,
-                            onClose: {
-                                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                    showPreferences = false
-                                }
-                            }
-                        )
-                        .environment(\.appTheme, currentTheme)
-                        .environment(\.appMode,  resolvedMode)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    .ignoresSafeArea(edges: .bottom)
-                    .zIndex(21)
-                }
+                .frame(width: W, alignment: .leading)
+                .clipped()
             }
             .onAppear {
                 applyBibleSource(bibleSourceRaw)
@@ -327,6 +327,7 @@ struct ContentView: View {
     private func openDragGesture(leftW: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
+                guard !showPreferences else { return }
                 guard currentPane == .center else { return }
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 let dx = clamp(value.translation.width, 0, leftW)
@@ -335,6 +336,10 @@ struct ContentView: View {
             }
             .onEnded { value in
                 defer { isDraggingPane = false }
+                guard !showPreferences else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    return
+                }
                 guard currentPane == .center else {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
                     return
@@ -359,6 +364,7 @@ struct ContentView: View {
     private func closeDragGesture(leftW: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .onChanged { value in
+                guard !showPreferences else { return }
                 guard currentPane == .left else { return }
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 let dx = clamp(value.translation.width, -leftW, 0)
@@ -367,6 +373,10 @@ struct ContentView: View {
             }
             .onEnded { value in
                 defer { isDraggingPane = false }
+                guard !showPreferences else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    return
+                }
                 guard currentPane == .left else {
                     withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
                     return
