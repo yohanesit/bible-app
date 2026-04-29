@@ -141,6 +141,10 @@ struct ContentView: View {
                         .environment(\.appMode,  resolvedMode)
                         .environment(\.appTextSize, textSize)
                         .environment(\.appSpacing, spacing)
+                        // Freeze inner scrolls while the drawer is mid-drag or open,
+                        // so the chapter text doesn't drift vertically inside its
+                        // container while the container itself is sliding.
+                        .scrollDisabled(isDraggingPane || currentPane == .left)
 
                         // Dim + close target. Always present when pane is open or
                         // mid-drag so the close DragGesture has a stable host view
