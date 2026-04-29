@@ -75,32 +75,22 @@ struct ContentView: View {
         GeometryReader { geo in
             let W = geo.size.width
             let topSafeArea = geo.safeAreaInsets.top
+            let bottomSafeArea = geo.safeAreaInsets.bottom
             // Fixed left pane width.
             let leftW = W * 0.88
 
             let colors = Colors.theme(currentTheme, mode: resolvedMode)
-            let drag = effectiveDragDx(leftW: leftW)
-            let centerX = centerPaneX(leftW: leftW, dragDx: drag)
-            let overlayOpacity = mainContentOverlayOpacity(leftW: leftW, dragDx: drag)
-            let leftPaneParallaxX = leftPaneParallaxOffset(leftW: leftW, centerPaneX: centerX)
-            let leftPaneParallaxScale = leftPaneParallaxScale(leftW: leftW, centerPaneX: centerX)
-            let bottomSafeArea = geo.safeAreaInsets.bottom
-            // Content always starts at y=0; the status bar floats over it (no layout shift on state change).
+            let drawerOffset = drawerOffsetX(leftW: leftW)
+            let overlayOpacity = mainContentOverlayOpacity(leftW: leftW)
             let topContentInset: CGFloat = 0
 
             ZStack {
-                // Full-screen base. No special top safe-area band is painted.
+                // Full-screen base. Acts as a safety fill behind any spring overshoot.
                 colors.background.ignoresSafeArea()
 
-                // Left-pane underlay to avoid bright gaps during parallax/scale.
-                HStack(spacing: 0) {
-                    colors.surface
-                        .frame(width: leftW + 40)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                // Left pane (behind).
+                // Drawer: a single rigid HStack of [left pane | main surface].
+                // Translating this HStack moves both panes together at 1:1 — no
+                // parallax desync, no zIndex juggling, no offset/frame mismatch.
                 HStack(spacing: 0) {
                     LeftPaneView(
                         selection: $leftSelection,
@@ -118,84 +108,83 @@ struct ContentView: View {
                         },
                         onClose: { dismissPaneToCenter() }
                     )
-                        .frame(width: leftW)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .offset(x: leftPaneParallaxX)
-                .scaleEffect(leftPaneParallaxScale, anchor: .leading)
-                // When the pane is open, ensure it sits above the front surface
-                // for hit-testing. This avoids "invisible overlay" regressions
-                // where the center surface still intercepts taps.
-                .zIndex(currentPane == .left ? 2 : 0)
-                .environment(\.appTheme, currentTheme)
-                .environment(\.appMode,  resolvedMode)
-                .environment(\.appTextSize, textSize)
-
-                // Front surface: full-screen, slides under the status bar.
-                ZStack(alignment: .top) {
-                    Group {
-                        switch leftSelection {
-                        case .daily:
-                            DailyMassView(
-                                isReadingState: $isReadingState,
-                                topContentInset: topContentInset,
-                                onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
-                            )
-                            .environment(readingProvider)
-                        case .book:
-                            BibleChapterView(
-                                isReadingState: $isReadingState,
-                                topContentInset: topContentInset,
-                                onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
-                                onChapterChange: { bookName, chapter in
-                                    handleVisibleChapterChange(bookName: bookName, chapter: chapter)
-                                }
-                            )
-                            .environment(chapterProvider)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(width: leftW)
+                    .background(colors.surface)
                     .environment(\.appTheme, currentTheme)
                     .environment(\.appMode,  resolvedMode)
                     .environment(\.appTextSize, textSize)
-                    .environment(\.appSpacing, spacing)
-                    .overlay {
-                        if overlayOpacity > 0.001 {
+
+                    ZStack(alignment: .top) {
+                        Group {
+                            switch leftSelection {
+                            case .daily:
+                                DailyMassView(
+                                    isReadingState: $isReadingState,
+                                    topContentInset: topContentInset,
+                                    onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
+                                )
+                                .environment(readingProvider)
+                            case .book:
+                                BibleChapterView(
+                                    isReadingState: $isReadingState,
+                                    topContentInset: topContentInset,
+                                    onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
+                                    onChapterChange: { bookName, chapter in
+                                        handleVisibleChapterChange(bookName: bookName, chapter: chapter)
+                                    }
+                                )
+                                .environment(chapterProvider)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .environment(\.appTheme, currentTheme)
+                        .environment(\.appMode,  resolvedMode)
+                        .environment(\.appTextSize, textSize)
+                        .environment(\.appSpacing, spacing)
+
+                        // Dim + close target. Always present when pane is open or
+                        // mid-drag so the close DragGesture has a stable host view
+                        // (won't be torn down mid-drag as opacity decreases).
+                        if overlayOpacity > 0.001 || currentPane == .left {
                             Rectangle()
                                 .fill(colors.background.opacity(overlayOpacity))
                                 .contentShape(Rectangle())
                                 .onTapGesture { dismissPaneToCenter() }
+                                .gesture(closeDragGesture(leftW: leftW))
+                                .allowsHitTesting(currentPane == .left || isDraggingPane)
                         }
-                    }
 
-                    // Bottom navigation bar — slides with the front surface, hidden in reading state.
-                    if !isReadingState {
-                        VStack(spacing: 0) {
-                            Spacer(minLength: 0)
-                            BottomBar(
-                                primaryTitle: topBarPrimaryTitle,
-                                secondaryTitle: topBarSecondaryTitle,
-                                bottomSafeArea: bottomSafeArea,
-                                onOpenLeft: { togglePane(.left) },
-                                onOpenRight: { togglePane(.left) },
-                                onOpenThemeSettings: {
-                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                                        showPreferences = true
+                        // Bottom navigation bar — slides with the main surface, hidden in reading state.
+                        if !isReadingState {
+                            VStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                BottomBar(
+                                    primaryTitle: topBarPrimaryTitle,
+                                    secondaryTitle: topBarSecondaryTitle,
+                                    bottomSafeArea: bottomSafeArea,
+                                    onOpenLeft: { togglePane(.left) },
+                                    onOpenRight: { togglePane(.left) },
+                                    onOpenThemeSettings: {
+                                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                                            showPreferences = true
+                                        }
                                     }
-                                }
-                            )
-                            .environment(\.appTheme, currentTheme)
-                            .environment(\.appMode,  resolvedMode)
+                                )
+                                .environment(\.appTheme, currentTheme)
+                                .environment(\.appMode,  resolvedMode)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
+                    .frame(width: W)
+                    .offset(y: showPreferences ? -96 : 0)
+                    // Open-pull gesture lives on the main surface only. Non-simultaneous
+                    // so the inner ScrollView owns vertical pans without contention.
+                    .gesture(openDragGesture(leftW: leftW))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .offset(y: showPreferences ? -96 : 0)
-                .offset(x: centerX)
-                .zIndex(1)
+                .frame(width: leftW + W, alignment: .leading)
+                .offset(x: drawerOffset)
 
                 if showPreferences {
                     Rectangle()
@@ -285,35 +274,6 @@ struct ContentView: View {
                     playPaneOpenHaptic()
                 }
             }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 10, coordinateSpace: .local)
-                    .onChanged { value in
-                        guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                        isDraggingPane = true
-                        withTransaction(Transaction(animation: nil)) { dragDx = value.translation.width }
-                    }
-                    .onEnded { value in
-                        defer { isDraggingPane = false }
-                        guard abs(value.translation.width) > abs(value.translation.height) else {
-                            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
-                            return
-                        }
-
-                        let dx = value.translation.width
-                            + (value.predictedEndTranslation.width - value.translation.width) * 0.3
-                        let threshold = leftW * 0.35
-
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                            switch currentPane {
-                            case .center:
-                                if dx > threshold { currentPane = .left }
-                            case .left:
-                                if dx < -threshold { currentPane = .center }
-                            }
-                            dragDx = 0
-                        }
-                    }
-            )
             .animation(.spring(response: 0.32, dampingFraction: 0.86), value: showPreferences)
             .sheet(isPresented: $showAppSettings) {
                 AcknowledgementsView()
@@ -338,47 +298,86 @@ struct ContentView: View {
 
     private func clamp(_ x: CGFloat, _ lo: CGFloat, _ hi: CGFloat) -> CGFloat { min(max(x, lo), hi) }
 
-    private func effectiveDragDx(leftW: CGFloat) -> CGFloat {
-        guard isDraggingPane else { return 0 }
-        switch currentPane {
-        case .center:
-            if dragDx > 0 { return clamp(dragDx, 0, leftW) }
-            return 0
-        case .left:
-            return clamp(min(dragDx, 0), -leftW, 0)
-        }
+    /// Translation applied to the [leftPane | main] HStack.
+    /// Closed: -leftW (left pane off-screen left, main fills screen).
+    /// Open:   0       (left pane fills screen, main pushed off to the right).
+    private func drawerOffsetX(leftW: CGFloat) -> CGFloat {
+        let base: CGFloat = (currentPane == .left) ? 0 : -leftW
+        let drag: CGFloat = isDraggingPane ? dragDx : 0
+        return clamp(base + drag, -leftW, 0)
     }
 
-    private func centerPaneX(leftW: CGFloat, dragDx: CGFloat) -> CGFloat {
-        switch currentPane {
-        case .center: return dragDx
-        case .left:   return leftW + dragDx
-        }
+    /// 0 when fully closed, 0.70 when fully open. Linear with drawer position.
+    private func mainContentOverlayOpacity(leftW: CGFloat) -> Double {
+        let maxDim: Double = 0.70
+        let openness = (drawerOffsetX(leftW: leftW) + leftW) / leftW
+        return Double(clamp(openness, 0, 1)) * maxDim
     }
 
-    private func leftPaneParallaxOffset(leftW: CGFloat, centerPaneX: CGFloat) -> CGFloat {
-        let closedOffset: CGFloat = 22
-        let progress = clamp(centerPaneX / leftW, 0, 1)
-        return closedOffset * (1 - progress)
+    // MARK: - Drawer gestures
+
+    /// Open-pull. Lives on the main surface only. Disambiguates against vertical
+    /// scroll using a width/height ratio so the inner ScrollView keeps ownership
+    /// of vertical pans without contention.
+    private func openDragGesture(leftW: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .onChanged { value in
+                guard currentPane == .center else { return }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                let dx = clamp(value.translation.width, 0, leftW)
+                isDraggingPane = true
+                withTransaction(Transaction(animation: nil)) { dragDx = dx }
+            }
+            .onEnded { value in
+                defer { isDraggingPane = false }
+                guard currentPane == .center else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    return
+                }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    return
+                }
+                let projected = value.translation.width
+                    + (value.predictedEndTranslation.width - value.translation.width) * 0.3
+                let threshold = leftW * 0.35
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    if projected > threshold { currentPane = .left }
+                    dragDx = 0
+                }
+            }
     }
 
-    private func leftPaneParallaxScale(leftW: CGFloat, centerPaneX: CGFloat) -> CGFloat {
-        let closedScale: CGFloat = 0.982
-        let progress = clamp(centerPaneX / leftW, 0, 1)
-        return closedScale + (1 - closedScale) * progress
-    }
-
-    // MARK: - Dimming
-
-    private func mainContentOverlayOpacity(leftW: CGFloat, dragDx: CGFloat) -> Double {
-        let maxDim = 0.70
-        switch currentPane {
-        case .center:
-            if dragDx == 0 { return 0 }
-            return min(Double(abs(dragDx) / leftW) * maxDim, maxDim)
-        case .left:
-            return Double(1 - abs(dragDx) / leftW) * maxDim
-        }
+    /// Close-pull. Lives on the dim overlay above the visible main strip when
+    /// the pane is open. Does nothing on the left pane itself, so the pane's
+    /// own ScrollView keeps full ownership of its gestures.
+    private func closeDragGesture(leftW: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .onChanged { value in
+                guard currentPane == .left else { return }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                let dx = clamp(value.translation.width, -leftW, 0)
+                isDraggingPane = true
+                withTransaction(Transaction(animation: nil)) { dragDx = dx }
+            }
+            .onEnded { value in
+                defer { isDraggingPane = false }
+                guard currentPane == .left else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    return
+                }
+                guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else {
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) { dragDx = 0 }
+                    return
+                }
+                let projected = value.translation.width
+                    + (value.predictedEndTranslation.width - value.translation.width) * 0.3
+                let threshold = -leftW * 0.35
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    if projected < threshold { currentPane = .center }
+                    dragDx = 0
+                }
+            }
     }
 
     private func dismissPaneToCenter() {
