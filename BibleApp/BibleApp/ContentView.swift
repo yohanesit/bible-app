@@ -97,85 +97,102 @@ struct ContentView: View {
 
                 // Drawer powered by a horizontal paging ScrollView. Native pan
                 // physics handle finger tracking, deceleration, and rubber-band.
-                ScrollView(.horizontal) {
-                    HStack(spacing: 0) {
-                        LeftPaneView(
-                            selection: $leftSelection,
-                            selectedLabel: $selectedRightLabel,
-                            topSafeArea: topSafeArea,
-                            bottomSafeArea: bottomSafeArea,
-                            onOpenAppSettings: {
-                                closeDrawer()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                    showAppSettings = true
-                                }
-                            },
-                            onClose: { closeDrawer() }
-                        )
-                        .frame(width: leftW)
-                        .background(colors.surface)
-                        .environment(\.appTheme, currentTheme)
-                        .environment(\.appMode,  resolvedMode)
-                        .environment(\.appTextSize, textSize)
-                        .id(DrawerPage.left)
-
-                        ZStack(alignment: .top) {
-                            Group {
-                                switch leftSelection {
-                                case .daily:
-                                    DailyMassView(
-                                        isReadingState: $isReadingState,
-                                        topContentInset: topContentInset,
-                                        onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
-                                    )
-                                    .environment(readingProvider)
-                                case .book:
-                                    BibleChapterView(
-                                        isReadingState: $isReadingState,
-                                        topContentInset: topContentInset,
-                                        onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
-                                        onChapterChange: { bookName, chapter in
-                                            handleVisibleChapterChange(bookName: bookName, chapter: chapter)
-                                        }
-                                    )
-                                    .environment(chapterProvider)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // `scrollPosition` can apply one frame late — first paint would show
+                // the leading (left) column. ScrollViewReader jumps to main without
+                // animation after layout so the default state is always main content.
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 0) {
+                            LeftPaneView(
+                                selection: $leftSelection,
+                                selectedLabel: $selectedRightLabel,
+                                topSafeArea: topSafeArea,
+                                bottomSafeArea: bottomSafeArea,
+                                onOpenAppSettings: {
+                                    closeDrawer()
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                        showAppSettings = true
+                                    }
+                                },
+                                onClose: { closeDrawer() }
+                            )
+                            .frame(width: leftW)
+                            .background(colors.surface)
                             .environment(\.appTheme, currentTheme)
                             .environment(\.appMode,  resolvedMode)
                             .environment(\.appTextSize, textSize)
-                            .environment(\.appSpacing, spacing)
-                            .scrollDisabled(scrolledID == .left)
+                            .id(DrawerPage.left)
 
-                            Color.black
-                                .opacity(Double(drawerProgress) * 0.35)
-                                .contentShape(Rectangle())
-                                .onTapGesture { closeDrawer() }
-                                .allowsHitTesting(scrolledID == .left)
+                            ZStack(alignment: .top) {
+                                Group {
+                                    switch leftSelection {
+                                    case .daily:
+                                        DailyMassView(
+                                            isReadingState: $isReadingState,
+                                            topContentInset: topContentInset,
+                                            onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } }
+                                        )
+                                        .environment(readingProvider)
+                                    case .book:
+                                        BibleChapterView(
+                                            isReadingState: $isReadingState,
+                                            topContentInset: topContentInset,
+                                            onTap: { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { isReadingState.toggle() } },
+                                            onChapterChange: { bookName, chapter in
+                                                handleVisibleChapterChange(bookName: bookName, chapter: chapter)
+                                            }
+                                        )
+                                        .environment(chapterProvider)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                                .environment(\.appTheme, currentTheme)
+                                .environment(\.appMode,  resolvedMode)
+                                .environment(\.appTextSize, textSize)
+                                .environment(\.appSpacing, spacing)
+                                .scrollDisabled(scrolledID == .left)
+
+                                Color.black
+                                    .opacity(Double(drawerProgress) * 0.35)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { closeDrawer() }
+                                    .allowsHitTesting(scrolledID == .left)
+                            }
+                            .frame(width: W)
+                            .id(DrawerPage.main)
                         }
-                        .frame(width: W)
-                        .id(DrawerPage.main)
+                        .scrollTargetLayout()
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(
+                                    key: DrawerScrollOffsetKey.self,
+                                    value: -proxy.frame(in: .named("drawerScroll")).origin.x
+                                )
+                            }
+                        )
                     }
-                    .scrollTargetLayout()
-                    .background(
-                        GeometryReader { proxy in
-                            Color.clear.preference(
-                                key: DrawerScrollOffsetKey.self,
-                                value: -proxy.frame(in: .named("drawerScroll")).origin.x
-                            )
+                    .scrollIndicators(.hidden)
+                    .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+                    .scrollPosition(id: $scrolledID)
+                    .scrollDisabled(showPreferences)
+                    .coordinateSpace(name: "drawerScroll")
+                    .onPreferenceChange(DrawerScrollOffsetKey.self) { offset in
+                        let progress = max(0, min(1, (leftW - offset) / max(leftW, 1)))
+                        if abs(progress - drawerProgress) > 0.0005 {
+                            drawerProgress = progress
                         }
-                    )
-                }
-                .scrollIndicators(.hidden)
-                .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
-                .scrollPosition(id: $scrolledID)
-                .scrollDisabled(showPreferences)
-                .coordinateSpace(name: "drawerScroll")
-                .onPreferenceChange(DrawerScrollOffsetKey.self) { offset in
-                    let progress = max(0, min(1, (leftW - offset) / max(leftW, 1)))
-                    if abs(progress - drawerProgress) > 0.0005 {
-                        drawerProgress = progress
+                    }
+                    .onAppear {
+                        // After first layout, snap to main so we never flash the left pane.
+                        DispatchQueue.main.async {
+                            var t = Transaction()
+                            t.animation = nil
+                            withTransaction(t) {
+                                proxy.scrollTo(DrawerPage.main, anchor: .leading)
+                            }
+                            scrolledID = .main
+                            drawerProgress = 0
+                        }
                     }
                 }
 
