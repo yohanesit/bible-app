@@ -399,7 +399,7 @@ private struct ChapterSectionHeadingView: View {
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, isFirstInChapter ? 20 : 36)
-            .padding(.bottom, 24)
+            .padding(.bottom, 12)
     }
 }
 
@@ -423,8 +423,6 @@ private struct ChapterVersesView: View {
             guard let h = sec.heading?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
             return !h.isEmpty
         }
-        // Extra top spacing between paragraphs (half a body line height)
-        let paragraphGap = textSize.bodyPointSize * 0.5 + spacing.bodyLineSpacing
 
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(sections.enumerated()), id: \.offset) { secIdx, section in
@@ -437,28 +435,46 @@ private struct ChapterVersesView: View {
 
                 let paragraphs = verseParagraphs(from: section.verses)
 
-                ForEach(Array(paragraphs.enumerated()), id: \.offset) { paraIdx, para in
-                    inlineVersesText(para.verses, colors: colors)
-                        .lineSpacing(spacing.bodyLineSpacing)
+                ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
+                    let prose = attributedVerseParagraph(para.verses, colors: colors)
+                    let laidOut = textSize.applyingChapterParagraphLayout(prose, spacing: spacing)
+                    Text(laidOut)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, paraIdx > 0 ? paragraphGap : 0)
                 }
             }
         }
     }
 
-    /// Flowing inline verses within one paragraph.
-    private func inlineVersesText(_ paraVerses: [BibleVerse], colors: ThemeColors) -> Text {
-        paraVerses.reduce(Text("")) { result, verse in
-            let numText = Text("\(verse.v)  ")
-                .font(ThemeFont.verseNumber(theme, textSize))
-                .foregroundStyle(colors.accent)
-                .baselineOffset(ThemeFont.verseNumberBaselineOffset(textSize))
-            let bodyText = Text(verse.v == paraVerses.last?.v ? verse.t : verse.t + "  ")
-                .font(ThemeFont.bodyDefault(theme, textSize))
-                .foregroundStyle(colors.textPrimary)
-            return result + numText + bodyText
+    /// One typography paragraph (`p` block): verse numerals styled; line spacing handled by `applyingChapterParagraphLayout`.
+    private func attributedVerseParagraph(_ paraVerses: [BibleVerse], colors: ThemeColors) -> AttributedString {
+        var combined = AttributedString("")
+        let bodyFont = ThemeFont.bodyDefault(theme, textSize)
+        let verseFont = ThemeFont.verseNumber(theme, textSize)
+        let verseBaseline = ThemeFont.verseNumberBaselineOffset(textSize)
+
+        for verse in paraVerses {
+            let spacer = verse.v == paraVerses.last?.v ? "" : "  "
+            let token = "\(verse.v)"
+
+            var numChunk = AttributedString(token)
+            numChunk.font = verseFont
+            numChunk.foregroundColor = colors.accent
+            combined.append(numChunk)
+            let numChars = token.count
+            let startIndex = combined.index(combined.endIndex, offsetByCharacters: -numChars)
+            combined[startIndex..<combined.endIndex].baselineOffset = verseBaseline
+
+            var spaceAfterNum = AttributedString(" ")
+            spaceAfterNum.font = bodyFont
+            spaceAfterNum.foregroundColor = colors.textPrimary
+            combined.append(spaceAfterNum)
+
+            var bodyChunk = AttributedString(verse.t + spacer)
+            bodyChunk.font = bodyFont
+            bodyChunk.foregroundColor = colors.textPrimary
+            combined.append(bodyChunk)
         }
+        return combined
     }
 }
 

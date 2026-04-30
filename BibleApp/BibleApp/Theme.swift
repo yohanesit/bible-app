@@ -60,6 +60,9 @@ enum AppTextSize: String, CaseIterable {
 
     var label: String { "\(Int(bodyPointSize))pt" }
 
+    /// First-line indent for chapter prose paragraphs (`p` boundaries); wrapped lines align to the margin.
+    var chapterParagraphFirstLineIndent: CGFloat { bodyPointSize * 1.6 + 2 }
+
     var previous: AppTextSize? {
         let all = AppTextSize.allCases
         guard let idx = all.firstIndex(of: self), idx > 0 else { return nil }
@@ -126,6 +129,21 @@ enum AppSpacing: String, CaseIterable {
         let all = AppSpacing.allCases
         guard let idx = all.firstIndex(of: self), idx < all.count - 1 else { return nil }
         return all[idx + 1]
+    }
+}
+
+extension AppTextSize {
+    func applyingChapterParagraphLayout(_ prose: AttributedString, spacing: AppSpacing) -> AttributedString {
+        let inset = chapterParagraphFirstLineIndent
+        guard inset > 0 || spacing.bodyLineSpacing > 0 else { return prose }
+        let mutable = NSMutableAttributedString(prose)
+        guard mutable.length > 0 else { return prose }
+        let ps = NSMutableParagraphStyle()
+        ps.firstLineHeadIndent = inset
+        ps.headIndent = 0
+        ps.lineSpacing = spacing.bodyLineSpacing
+        mutable.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: 0, length: mutable.length))
+        return AttributedString(mutable)
     }
 }
 
