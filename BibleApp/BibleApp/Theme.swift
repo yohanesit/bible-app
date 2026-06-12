@@ -61,7 +61,7 @@ enum AppTextSize: String, CaseIterable {
     var label: String { "\(Int(bodyPointSize))pt" }
 
     /// First-line indent for chapter prose paragraphs (`p` boundaries); wrapped lines align to the margin.
-    var chapterParagraphFirstLineIndent: CGFloat { bodyPointSize * 1.6 + 2 }
+    var chapterParagraphFirstLineIndent: CGFloat { bodyPointSize * 1.4 + 2 }
 
     var previous: AppTextSize? {
         let all = AppTextSize.allCases
@@ -133,17 +133,34 @@ enum AppSpacing: String, CaseIterable {
 }
 
 extension AppTextSize {
+    /// First-line indent only. Within-paragraph line spacing is applied via SwiftUI's `.lineSpacing(_:)` modifier on the rendering `Text`, since SwiftUI's `Text` does not reliably honor `NSParagraphStyle.lineSpacing`.
     func applyingChapterParagraphLayout(_ prose: AttributedString, spacing: AppSpacing) -> AttributedString {
         let inset = chapterParagraphFirstLineIndent
-        guard inset > 0 || spacing.bodyLineSpacing > 0 else { return prose }
+        guard inset > 0 else { return prose }
         let mutable = NSMutableAttributedString(prose)
         guard mutable.length > 0 else { return prose }
         let ps = NSMutableParagraphStyle()
         ps.firstLineHeadIndent = inset
         ps.headIndent = 0
-        ps.lineSpacing = spacing.bodyLineSpacing
         mutable.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: 0, length: mutable.length))
         return AttributedString(mutable)
+    }
+
+    /// Returns the body line height (font line height + line spacing) the chapter prose lays out with at this text size.
+    func chapterBodyLineHeight(theme: AppTheme, spacing: AppSpacing) -> CGFloat {
+        ThemeFont.bodyDefaultUIFont(theme, self).lineHeight + spacing.bodyLineSpacing
+    }
+
+    /// Builds an `NSAttributedString` for the drop-cap paragraph. No `firstLineHeadIndent` (the cap takes that role); only `lineSpacing` is applied.
+    func makeDropCapParagraphAttributedBody(_ prose: AttributedString, spacing: AppSpacing) -> NSAttributedString {
+        let mutable = NSMutableAttributedString(prose)
+        guard mutable.length > 0 else { return mutable }
+        let ps = NSMutableParagraphStyle()
+        ps.firstLineHeadIndent = 0
+        ps.headIndent = 0
+        ps.lineSpacing = spacing.bodyLineSpacing
+        mutable.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: 0, length: mutable.length))
+        return mutable
     }
 }
 
@@ -392,6 +409,33 @@ struct ThemeFont {
     static func chapterSectionHeading(_ theme: AppTheme, _ textSize: AppTextSize = .pt20) -> Font {
         let size = textSize.bodyPointSize
         return Font.custom("ValkyrieBCapsRegular", size: size)
+    }
+
+    /// UIFont equivalent of `bodyDefault` for the active theme; used by `UITextView` for the drop-cap paragraph layout.
+    static func bodyDefaultUIFont(_ theme: AppTheme, _ textSize: AppTextSize = .pt20) -> UIFont {
+        let size = textSize.bodyPointSize
+        switch theme {
+        case .purba:  return UIFont(name: "ValkyrieBRegular", size: size) ?? UIFont.systemFont(ofSize: size)
+        case .abadi:  return UIFont(name: "Heliotrope4TabRegular", size: size) ?? UIFont.systemFont(ofSize: size)
+        case .kini:   return UIFont(name: "IBMPlexMono", size: size) ?? UIFont.systemFont(ofSize: size)
+        case .system: return UIFont.systemFont(ofSize: size)
+        }
+    }
+
+    /// UIFont equivalent of `verseNumber` for the active theme; used by `UITextView` so the inline verse numerals match the body face.
+    static func verseNumberUIFont(_ theme: AppTheme, _ textSize: AppTextSize = .pt20) -> UIFont {
+        let size: CGFloat = max(9, textSize.bodyPointSize * 0.58)
+        switch theme {
+        case .purba:  return UIFont(name: "ValkyrieBRegular", size: size) ?? UIFont.systemFont(ofSize: size)
+        case .abadi:  return UIFont(name: "Heliotrope4TabRegular", size: size) ?? UIFont.systemFont(ofSize: size)
+        case .kini:   return UIFont(name: "IBMPlexMono", size: size) ?? UIFont.systemFont(ofSize: size)
+        case .system: return UIFont.systemFont(ofSize: size)
+        }
+    }
+
+    /// UIFont version of the title face (Valkyrie B Caps) at an arbitrary point size — used to scale the chapter drop cap to the requested 2-line height.
+    static func chapterDropCapUIFont(pointSize: CGFloat) -> UIFont {
+        UIFont(name: "ValkyrieBCapsRegular", size: pointSize) ?? UIFont.systemFont(ofSize: pointSize, weight: .semibold)
     }
 
     static func caption(_ theme: AppTheme) -> Font {

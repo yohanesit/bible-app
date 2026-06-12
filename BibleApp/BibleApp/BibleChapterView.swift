@@ -103,9 +103,9 @@ struct BibleChapterView: View {
     @ViewBuilder
     private func unavailableView(colors: ThemeColors) -> some View {
         switch provider.state {
-        case .empty(let bookName, let chapter):
+        case .empty(let bookName, _):
             VStack(spacing: 24) {
-                ChapterHeaderView(bookName: bookName, chapter: chapter, screenHeight: 0)
+                BookHeaderView(bookName: bookName, screenHeight: 0)
                     .padding(.horizontal, hPageMargin)
                 HStack(spacing: 10) {
                     Image(systemName: "arrow.down.circle")
@@ -264,15 +264,17 @@ private struct ChapterPageView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer().frame(height: topContentInset)
 
-                    ChapterHeaderView(
-                        bookName: chapter.bookName,
-                        chapter: chapter.chapter,
-                        screenHeight: scrollGeo.size.height
-                    )
-                    .padding(.horizontal, hPageMargin)
-
-                    ChapterVersesView(verses: chapter.verses)
+                    if chapter.chapter == 1 {
+                        BookHeaderView(
+                            bookName: chapter.bookName,
+                            screenHeight: scrollGeo.size.height
+                        )
                         .padding(.horizontal, hPageMargin)
+                    }
+
+                    ChapterVersesView(verses: chapter.verses, chapter: chapter.chapter)
+                        .padding(.horizontal, hPageMargin)
+                        .padding(.top, chapter.chapter == 1 ? 0 : topContentInset > 0 ? 0 : 24)
 
                     Spacer().frame(height: 100)
                 }
@@ -296,22 +298,24 @@ private struct ChapterPageView: View {
     }
 }
 
-// MARK: - ChapterHeaderView
+// MARK: - BookHeaderView
+//
+// Centered hero treatment shown only on the book opener (chapter 1). Subsequent
+// chapters omit this view entirely so the page begins with the drop cap.
 
-private struct ChapterHeaderView: View {
+private struct BookHeaderView: View {
     @Environment(\.appTheme) private var theme
     @Environment(\.appMode)  private var mode
     @Environment(\.appTextSize) private var textSize
 
     let bookName: String
-    let chapter: Int
     var screenHeight: CGFloat = 0
 
     var body: some View {
         let colors = Colors.theme(theme, mode: mode)
         VStack(spacing: 32) {
             Spacer(minLength: 0)
-            Text("\(bookName) \(chapter)")
+            Text(bookName)
                 .font(ThemeFont.titleDefault(theme, textSize))
                 .foregroundStyle(colors.textPrimary)
                 .multilineTextAlignment(.center)
@@ -412,6 +416,7 @@ private struct ChapterVersesView: View {
     @Environment(\.appSpacing)  private var spacing
 
     let verses: [BibleVerse]
+    let chapter: Int
 
     private var sections: [BibleVerseSection] {
         bibleVerseSections(from: verses)
@@ -423,6 +428,19 @@ private struct ChapterVersesView: View {
             guard let h = sec.heading?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
             return !h.isEmpty
         }
+        // Paragraph break behaves like a regular line break: gap between `p`
+        // blocks matches the within-paragraph line spacing. The first-line
+        // indent on each paragraph is what visually distinguishes them.
+        let paragraphGap = spacing.bodyLineSpacing
+
+        // Address (sectionIdx, paragraphIdx) of the chapter's first prose paragraph; that paragraph renders via DropCapParagraphView.
+        let firstParagraphAddress: (Int, Int)? = {
+            for (sIdx, section) in sections.enumerated() {
+                let paras = verseParagraphs(from: section.verses)
+                if !paras.isEmpty { return (sIdx, 0) }
+            }
+            return nil
+        }()
 
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(sections.enumerated()), id: \.offset) { secIdx, section in
@@ -435,46 +453,191 @@ private struct ChapterVersesView: View {
 
                 let paragraphs = verseParagraphs(from: section.verses)
 
-                ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
-                    let prose = attributedVerseParagraph(para.verses, colors: colors)
-                    let laidOut = textSize.applyingChapterParagraphLayout(prose, spacing: spacing)
-                    Text(laidOut)
+                ForEach(Array(paragraphs.enumerated()), id: \.offset) { paraIdx, para in
+                    let isDropCapParagraph = firstParagraphAddress.map { $0.0 == secIdx && $0.1 == paraIdx } ?? false
+
+                    if isDropCapParagraph {
+                        let body = uiKitVerseParagraph(
+                            para.verses,
+                            colors: colors,
+                            suppressFirstVerseNumber: true,
+                            spacing: spacing
+                        )
+                        DropCapParagraphView(
+                            dropCapText: "\(chapter)",
+                            body: body,
+                            theme: theme,
+                            textSize: textSize,
+                            spacing: spacing,
+                            accent: colors.accent
+                        )
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, paraIdx > 0 ? paragraphGap : 0)
+                    } else {
+                        let prose = attributedVerseParagraph(para.verses, colors: colors)
+                        let laidOut = textSize.applyingChapterParagraphLayout(prose, spacing: spacing)
+                        Text(laidOut)
+                            .lineSpacing(spacing.bodyLineSpacing)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, paraIdx > 0 ? paragraphGap : 0)
+                    }
                 }
             }
         }
     }
 
-    /// One typography paragraph (`p` block): verse numerals styled; line spacing handled by `applyingChapterParagraphLayout`.
-    private func attributedVerseParagraph(_ paraVerses: [BibleVerse], colors: ThemeColors) -> AttributedString {
+    /// One typography paragraph (`p` block): verse numerals styled; `\u{00A0}` ties number + first two words so the numeral is not orphaned on its own line.
+    /// When `suppressFirstVerseNumber` is true (drop-cap paragraph), the first verse's superscript numeral is omitted; the cap takes its place.
+    private func attributedVerseParagraph(
+        _ paraVerses: [BibleVerse],
+        colors: ThemeColors,
+        suppressFirstVerseNumber: Bool = false
+    ) -> AttributedString {
         var combined = AttributedString("")
         let bodyFont = ThemeFont.bodyDefault(theme, textSize)
         let verseFont = ThemeFont.verseNumber(theme, textSize)
         let verseBaseline = ThemeFont.verseNumberBaselineOffset(textSize)
+        let nbsp = "\u{00A0}"
 
-        for verse in paraVerses {
+        for (idx, verse) in paraVerses.enumerated() {
             let spacer = verse.v == paraVerses.last?.v ? "" : "  "
-            let token = "\(verse.v)"
+            let isFirstAndSuppressed = suppressFirstVerseNumber && idx == 0
 
-            var numChunk = AttributedString(token)
-            numChunk.font = verseFont
-            numChunk.foregroundColor = colors.accent
-            combined.append(numChunk)
-            let numChars = token.count
-            let startIndex = combined.index(combined.endIndex, offsetByCharacters: -numChars)
-            combined[startIndex..<combined.endIndex].baselineOffset = verseBaseline
+            if !isFirstAndSuppressed {
+                let token = "\(verse.v)"
+                var numChunk = AttributedString(token)
+                numChunk.font = verseFont
+                numChunk.foregroundColor = colors.accent
+                combined.append(numChunk)
+                let numChars = token.count
+                let startIndex = combined.index(combined.endIndex, offsetByCharacters: -numChars)
+                combined[startIndex..<combined.endIndex].baselineOffset = verseBaseline
+                appendNonBreakingGlue(&combined, nbsp, bodyFont: bodyFont, foreground: colors.textPrimary)
+            }
 
-            var spaceAfterNum = AttributedString(" ")
-            spaceAfterNum.font = bodyFont
-            spaceAfterNum.foregroundColor = colors.textPrimary
-            combined.append(spaceAfterNum)
+            appendVerseTextWithLeadingWordTie(
+                &combined,
+                prose: verse.t,
+                bodyFont: bodyFont,
+                foreground: colors.textPrimary,
+                nbsp: nbsp
+            )
 
-            var bodyChunk = AttributedString(verse.t + spacer)
-            bodyChunk.font = bodyFont
-            bodyChunk.foregroundColor = colors.textPrimary
-            combined.append(bodyChunk)
+            if !spacer.isEmpty {
+                var between = AttributedString(spacer)
+                between.font = bodyFont
+                between.foregroundColor = colors.textPrimary
+                combined.append(between)
+            }
         }
         return combined
+    }
+
+    /// UIKit-flavored attributed string for the drop-cap paragraph. Uses `UIFont` and `UIColor` directly so `UITextView`/TextKit honors the active theme face and the line metrics we use to size the cap exclusion rect. SwiftUI's `Font` does not bridge reliably to `NSAttributedString` (UITextView falls back to a default font), which is why this path is duplicated rather than shared with `attributedVerseParagraph`.
+    private func uiKitVerseParagraph(
+        _ paraVerses: [BibleVerse],
+        colors: ThemeColors,
+        suppressFirstVerseNumber: Bool,
+        spacing: AppSpacing
+    ) -> NSAttributedString {
+        let combined = NSMutableAttributedString()
+        let bodyFont = ThemeFont.bodyDefaultUIFont(theme, textSize)
+        let verseFont = ThemeFont.verseNumberUIFont(theme, textSize)
+        let verseBaseline = ThemeFont.verseNumberBaselineOffset(textSize)
+        let textColor = UIColor(colors.textPrimary)
+        let accentColor = UIColor(colors.accent)
+        let nbsp = "\u{00A0}"
+
+        let bodyAttrs: [NSAttributedString.Key: Any] = [
+            .font: bodyFont,
+            .foregroundColor: textColor
+        ]
+        let verseAttrs: [NSAttributedString.Key: Any] = [
+            .font: verseFont,
+            .foregroundColor: accentColor,
+            .baselineOffset: verseBaseline
+        ]
+
+        func appendBody(_ s: String) {
+            guard !s.isEmpty else { return }
+            combined.append(NSAttributedString(string: s, attributes: bodyAttrs))
+        }
+
+        for (idx, verse) in paraVerses.enumerated() {
+            let isFirstAndSuppressed = suppressFirstVerseNumber && idx == 0
+            let spacer = verse.v == paraVerses.last?.v ? "" : "  "
+
+            if !isFirstAndSuppressed {
+                combined.append(NSAttributedString(string: "\(verse.v)", attributes: verseAttrs))
+                appendBody(nbsp)
+            }
+
+            let trimmed = verse.t.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let parts = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true).map(String.init)
+                let w1 = parts[0]
+                let w2 = parts.count > 1 ? parts[1] : ""
+                let tail: String = parts.count > 2 ? " " + parts[2] : ""
+
+                appendBody(w1)
+                if !w2.isEmpty {
+                    appendBody(nbsp)
+                    appendBody(w2)
+                }
+                appendBody(tail)
+            }
+
+            appendBody(spacer)
+        }
+
+        // Apply paragraph style after content is built so the whole range receives lineSpacing (no firstLineHeadIndent — the cap takes that role).
+        let ps = NSMutableParagraphStyle()
+        ps.firstLineHeadIndent = 0
+        ps.headIndent = 0
+        ps.lineSpacing = spacing.bodyLineSpacing
+        if combined.length > 0 {
+            combined.addAttribute(.paragraphStyle, value: ps, range: NSRange(location: 0, length: combined.length))
+        }
+        return combined
+    }
+
+    private func appendNonBreakingGlue(_ combined: inout AttributedString, _ nbsp: String, bodyFont: Font, foreground: Color) {
+        var glue = AttributedString(nbsp)
+        glue.font = bodyFont
+        glue.foregroundColor = foreground
+        combined.append(glue)
+    }
+
+    /// First two words separated by NBSP from each other and from the preceding verse number; remainder uses normal breaks.
+    private func appendVerseTextWithLeadingWordTie(
+        _ combined: inout AttributedString,
+        prose: String,
+        bodyFont: Font,
+        foreground: Color,
+        nbsp: String
+    ) {
+        let trimmed = prose.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let parts = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true).map(String.init)
+        let w1 = parts[0]
+        let w2 = parts.count > 1 ? parts[1] : ""
+        let tail: String = parts.count > 2 ? " " + parts[2] : ""
+
+        func appendPlain(_ chunk: String) {
+            guard !chunk.isEmpty else { return }
+            var a = AttributedString(chunk)
+            a.font = bodyFont
+            a.foregroundColor = foreground
+            combined.append(a)
+        }
+
+        appendPlain(w1)
+        if !w2.isEmpty {
+            appendNonBreakingGlue(&combined, nbsp, bodyFont: bodyFont, foreground: foreground)
+            appendPlain(w2)
+        }
+        appendPlain(tail)
     }
 }
 
@@ -484,6 +647,186 @@ private struct ChapterScrollOffsetKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+// MARK: - DropCapParagraphView
+//
+// Renders the chapter's first prose paragraph with a 2-line drop cap. The cap
+// glyph is a `UILabel` overlaid on the upper-left of the host view; the
+// embedded non-scrolling `UITextView` carves out a rect of height = 2 lines
+// via `textContainer.exclusionPaths` so the prose wraps to the right of the
+// cap for the first 2 lines, then falls back to the left margin underneath.
+
+private struct DropCapParagraphView: UIViewRepresentable {
+
+    let dropCapText: String
+    let body: NSAttributedString
+    let theme: AppTheme
+    let textSize: AppTextSize
+    let spacing: AppSpacing
+    let accent: Color
+
+    func makeUIView(context: Context) -> DropCapHostView {
+        let host = DropCapHostView()
+        host.backgroundColor = .clear
+        configure(host: host)
+        return host
+    }
+
+    func updateUIView(_ uiView: DropCapHostView, context: Context) {
+        configure(host: uiView)
+    }
+
+    @available(iOS 16.0, *)
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: DropCapHostView, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.bounds.width
+        guard width > 0 else { return nil }
+        return uiView.preferredSize(forWidth: width)
+    }
+
+    private func configure(host: DropCapHostView) {
+        let bodyFont = ThemeFont.bodyDefaultUIFont(theme, textSize)
+        let lineHeight = textSize.chapterBodyLineHeight(theme: theme, spacing: spacing)
+
+        // Pick the cap font size from body metrics so the glyph's cap-top
+        // aligns with body line-1 cap-top AND the baseline aligns with line-2
+        // baseline simultaneously. Both constraints reduce to:
+        //   capFont.capHeight == bodyFont.capHeight + lineHeight
+        // We sample the title face once at a reference size to recover its
+        // cap-height-per-point ratio, then scale.
+        let desiredCapHeight = bodyFont.capHeight + lineHeight
+        let probe = ThemeFont.chapterDropCapUIFont(pointSize: 100)
+        let capHeightPerPoint = probe.capHeight > 0 ? probe.capHeight / 100 : 0.7
+        let capPointSize = desiredCapHeight / capHeightPerPoint
+        let capFont = ThemeFont.chapterDropCapUIFont(pointSize: capPointSize)
+
+        host.apply(
+            dropCapText: dropCapText,
+            dropCapFont: capFont,
+            dropCapColor: UIColor(accent),
+            body: body,
+            bodyFont: bodyFont,
+            lineHeight: lineHeight
+        )
+    }
+}
+
+private final class DropCapHostView: UIView {
+
+    private let textView: UITextView = {
+        let tv = UITextView()
+        tv.isScrollEnabled = false
+        tv.isEditable = false
+        tv.isSelectable = false
+        tv.backgroundColor = .clear
+        tv.textContainerInset = .zero
+        tv.textContainer.lineFragmentPadding = 0
+        tv.adjustsFontForContentSizeCategory = false
+        return tv
+    }()
+
+    private let capLabel: UILabel = {
+        let label = UILabel()
+        label.numberOfLines = 1
+        label.backgroundColor = .clear
+        label.adjustsFontForContentSizeCategory = false
+        return label
+    }()
+
+    private var bodyFont: UIFont = .systemFont(ofSize: 17)
+    private var lineHeight: CGFloat = 24
+    private var dropCapWidth: CGFloat = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        addSubview(textView)
+        addSubview(capLabel)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func apply(
+        dropCapText: String,
+        dropCapFont: UIFont,
+        dropCapColor: UIColor,
+        body: NSAttributedString,
+        bodyFont: UIFont,
+        lineHeight: CGFloat
+    ) {
+        self.bodyFont = bodyFont
+        self.lineHeight = lineHeight
+
+        capLabel.text = dropCapText
+        capLabel.font = dropCapFont
+        capLabel.textColor = dropCapColor
+        capLabel.sizeToFit()
+
+        textView.attributedText = body
+
+        let gap = max(4, bodyFont.pointSize * 0.25)
+        dropCapWidth = ceil(capLabel.bounds.width + gap)
+
+        setNeedsLayout()
+        invalidateIntrinsicContentSize()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        // Glue between body line metrics and label metrics:
+        //   bodyInternalTopOffset = how far the body's ascender sits above its capHeight.
+        //   capInternalTopOffset  = same for the drop-cap font, where ascender > capHeight is typical.
+        //
+        // We want the cap glyph's cap-top to sit at body line-1 cap-top in view-space.
+        // If we just placed labelOriginY = bodyLine1CapTopY - capInternalTopOffset, the
+        // resulting value would often be negative (the label's frame extends above the
+        // host view because the cap's full ascender region is taller than the small body
+        // ascender region). Instead we shift the body text down by a matching `topInset`
+        // so labelOriginY stays >= 0 and both cap-top + line-2 baseline alignments hold.
+        let capFont = capLabel.font ?? bodyFont
+        let bodyInternalTopOffset = max(0, bodyFont.ascender - bodyFont.capHeight)
+        let capInternalTopOffset = max(0, capFont.ascender - capFont.capHeight)
+        let topInset = max(0, capInternalTopOffset - bodyInternalTopOffset)
+
+        textView.textContainerInset = UIEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
+
+        let exclusionRect = CGRect(x: 0, y: 0, width: dropCapWidth, height: 2 * lineHeight)
+        textView.textContainer.exclusionPaths = [UIBezierPath(rect: exclusionRect)]
+        textView.frame = bounds
+
+        // labelOriginY + capInternalTopOffset == topInset + bodyInternalTopOffset
+        //   (so the cap glyph cap-top lands on body line-1 cap-top). Combined with
+        // capFont.capHeight == bodyFont.capHeight + lineHeight (set in `configure`),
+        // this also makes the cap baseline land exactly on body line-2 baseline.
+        let labelOriginY = topInset + bodyInternalTopOffset - capInternalTopOffset
+        capLabel.frame = CGRect(
+            x: 0,
+            y: floor(labelOriginY),
+            width: capLabel.bounds.width,
+            height: capLabel.bounds.height
+        )
+    }
+
+    override var intrinsicContentSize: CGSize {
+        preferredSize(forWidth: bounds.width > 0 ? bounds.width : UIView.noIntrinsicMetric)
+    }
+
+    func preferredSize(forWidth width: CGFloat) -> CGSize {
+        guard width > 0 && width != UIView.noIntrinsicMetric else {
+            return CGSize(width: UIView.noIntrinsicMetric, height: UIView.noIntrinsicMetric)
+        }
+        let capFont = capLabel.font ?? bodyFont
+        let bodyInternalTopOffset = max(0, bodyFont.ascender - bodyFont.capHeight)
+        let capInternalTopOffset = max(0, capFont.ascender - capFont.capHeight)
+        let topInset = max(0, capInternalTopOffset - bodyInternalTopOffset)
+
+        textView.textContainer.size = CGSize(width: width, height: .greatestFiniteMagnitude)
+        textView.textContainer.exclusionPaths = [UIBezierPath(rect: CGRect(x: 0, y: 0, width: dropCapWidth, height: 2 * lineHeight))]
+        textView.textContainerInset = UIEdgeInsets(top: topInset, left: 0, bottom: 0, right: 0)
+        let fit = textView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let minHeight = 2 * lineHeight + topInset
+        return CGSize(width: width, height: ceil(max(fit.height, minHeight)))
     }
 }
 

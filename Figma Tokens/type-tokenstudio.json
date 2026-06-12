@@ -1,0 +1,310 @@
+{
+  "global": {
+    "font": {
+      "weight": {
+        "regular": { "value": "400", "type": "fontWeights", "description": "Regular weight" },
+        "medium": { "value": "500", "type": "fontWeights", "description": "Medium weight" },
+        "semibold": { "value": "600", "type": "fontWeights", "description": "Semibold weight" },
+        "bold": { "value": "700", "type": "fontWeights", "description": "Bold weight" }
+      },
+      "size": {
+        "12": { "value": "12", "type": "fontSizes" },
+        "14": { "value": "14", "type": "fontSizes" },
+        "16": { "value": "16", "type": "fontSizes" },
+        "20": { "value": "20", "type": "fontSizes" },
+        "24": { "value": "24", "type": "fontSizes" },
+        "32": { "value": "32", "type": "fontSizes" }
+      },
+      "lineHeight": {
+        "100": { "value": "100%", "type": "lineHeights" },
+        "150": { "value": "150%", "type": "lineHeights" },
+        "170": { "value": "170%", "type": "lineHeights" },
+        "185": { "value": "185%", "type": "lineHeights" },
+        "auto": { "value": "AUTO", "type": "lineHeights" }
+      },
+      "letterSpacing": {
+        "tight": { "value": "-0.02em", "type": "letterSpacing" },
+        "normal": { "value": "0em", "type": "letterSpacing" },
+        "wide": { "value": "0.06em", "type": "letterSpacing" },
+        "wider": { "value": "0.1em", "type": "letterSpacing" }
+      }
+    },
+    "button": {
+      "fontFamily": { "value": "Ideal Sans", "type": "fontFamilies", "description": "Shared across all themes" },
+      "fontSize": { "value": "{global.font.size.14}", "type": "fontSizes" },
+      "fontWeight": { "value": "{global.font.weight.semibold}", "type": "fontWeights" },
+      "lineHeight": { "value": "{global.font.lineHeight.auto}", "type": "lineHeights" },
+      "letterSpacing": { "value": "{global.font.letterSpacing.wide}", "type": "letterSpacing" }
+    }
+  },
+
+  "purba": {
+    "description": "Ancient · IM Fell Great Primer (display) · Martina Plantijn (body)",
+    "font": {
+      "family": {
+        "display": { "value": "IM Fell Great Primer", "type": "fontFamilies", "description": "Titles, captions" },
+        "body": { "value": "Martina Plantijn", "type": "fontFamilies", "description": "Scripture body text" }
+      }
+    },
+    "typography": {
+      "title-large": {
+        "fontFamily": { "value": "{purba.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.32}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "title-default": {
+        "fontFamily": { "value": "{purba.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.24}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "title-small": {
+        "fontFamily": { "value": "{purba.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.20}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "caption": {
+        "fontFamily": { "value": "{purba.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.16}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.wide}", "type": "letterSpacing" }
+      },
+      "body-large": {
+        "fontFamily": { "value": "{purba.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.24}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.150}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "body-default": {
+        "fontFamily": { "value": "{purba.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.20}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.170}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "body-small": {
+        "fontFamily": { "value": "{purba.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.16}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.185}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      }
+    },
+    "day": {
+      "background": { "value": "#FAF9F6", "type": "color", "description": "Page ground" },
+      "surface": { "value": "#F0EDE8", "type": "color", "description": "Cards, response blocks" },
+      "border": { "value": "#E4DED6", "type": "color", "description": "Dividers, rules" },
+      "accent": { "value": "#7A6848", "type": "color", "description": "Verse numbers, labels, icons" },
+      "text-primary": { "value": "#1A1612", "type": "color", "description": "Body text" },
+      "text-secondary": { "value": "#504840", "type": "color", "description": "Captions, liturgical labels" }
+    },
+    "night": {
+      "background": { "value": "#080503", "type": "color", "description": "Page ground" },
+      "surface": { "value": "#110D06", "type": "color", "description": "Cards, response blocks" },
+      "border": { "value": "#1E1810", "type": "color", "description": "Dividers, rules" },
+      "accent": { "value": "#8B6228", "type": "color", "description": "Verse numbers, labels, icons" },
+      "text-primary": { "value": "#D4C4A8", "type": "color", "description": "Body text" },
+      "text-secondary": { "value": "#8C7860", "type": "color", "description": "Captions, liturgical labels" }
+    }
+  },
+
+  "abadi": {
+    "description": "Eternal · Cronos Pro (display + body)",
+    "font": {
+      "family": {
+        "display": { "value": "Cronos Pro", "type": "fontFamilies", "description": "Titles, captions" },
+        "body": { "value": "Cronos Pro", "type": "fontFamilies", "description": "Scripture body text" }
+      }
+    },
+    "typography": {
+      "title-large": {
+        "fontFamily": { "value": "{abadi.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.32}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.tight}", "type": "letterSpacing" }
+      },
+      "title-default": {
+        "fontFamily": { "value": "{abadi.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.24}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.tight}", "type": "letterSpacing" }
+      },
+      "title-small": {
+        "fontFamily": { "value": "{abadi.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.20}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.tight}", "type": "letterSpacing" }
+      },
+      "caption": {
+        "fontFamily": { "value": "{abadi.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.16}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.medium}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.wider}", "type": "letterSpacing" }
+      },
+      "body-large": {
+        "fontFamily": { "value": "{abadi.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.24}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.150}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "body-default": {
+        "fontFamily": { "value": "{abadi.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.20}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.170}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "body-small": {
+        "fontFamily": { "value": "{abadi.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.16}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.185}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      }
+    },
+    "day": {
+      "background": { "value": "#F2F0EC", "type": "color", "description": "Page ground" },
+      "surface": { "value": "#E8E5DF", "type": "color", "description": "Cards, response blocks" },
+      "border": { "value": "#E0DDD6", "type": "color", "description": "Dividers, rules" },
+      "accent": { "value": "#8C8A85", "type": "color", "description": "Verse numbers, labels, icons" },
+      "text-primary": { "value": "#1C1C1C", "type": "color", "description": "Body text" },
+      "text-secondary": { "value": "#5A5855", "type": "color", "description": "Captions, liturgical labels" }
+    },
+    "night": {
+      "background": { "value": "#060606", "type": "color", "description": "Page ground" },
+      "surface": { "value": "#0E0E0E", "type": "color", "description": "Cards, response blocks" },
+      "border": { "value": "#242422", "type": "color", "description": "Dividers, rules" },
+      "accent": { "value": "#6B6A66", "type": "color", "description": "Verse numbers, labels, icons" },
+      "text-primary": { "value": "#DDDBD6", "type": "color", "description": "Body text" },
+      "text-secondary": { "value": "#989590", "type": "color", "description": "Captions, liturgical labels" }
+    }
+  },
+
+  "kini": {
+    "description": "Present · American Grotesk (display + body)",
+    "font": {
+      "family": {
+        "display": { "value": "American Grotesk", "type": "fontFamilies", "description": "Titles, captions" },
+        "body": { "value": "American Grotesk", "type": "fontFamilies", "description": "Scripture body text" }
+      }
+    },
+    "typography": {
+      "title-large": {
+        "fontFamily": { "value": "{kini.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.32}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.medium}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.tight}", "type": "letterSpacing" }
+      },
+      "title-default": {
+        "fontFamily": { "value": "{kini.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.24}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.medium}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.tight}", "type": "letterSpacing" }
+      },
+      "title-small": {
+        "fontFamily": { "value": "{kini.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.20}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.medium}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.tight}", "type": "letterSpacing" }
+      },
+      "caption": {
+        "fontFamily": { "value": "{kini.font.family.display}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.12}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.medium}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.100}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.wider}", "type": "letterSpacing" }
+      },
+      "body-large": {
+        "fontFamily": { "value": "{kini.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.24}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.150}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "body-default": {
+        "fontFamily": { "value": "{kini.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.20}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.170}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      },
+      "body-small": {
+        "fontFamily": { "value": "{kini.font.family.body}", "type": "fontFamilies" },
+        "fontSize": { "value": "{global.font.size.16}", "type": "fontSizes" },
+        "fontWeight": { "value": "{global.font.weight.regular}", "type": "fontWeights" },
+        "lineHeight": { "value": "{global.font.lineHeight.185}", "type": "lineHeights" },
+        "letterSpacing": { "value": "{global.font.letterSpacing.normal}", "type": "letterSpacing" }
+      }
+    },
+    "day": {
+      "background": { "value": "#FAFAF8", "type": "color", "description": "Page ground" },
+      "surface": { "value": "#F0F0EE", "type": "color", "description": "Cards, response blocks" },
+      "border": { "value": "#EFEFED", "type": "color", "description": "Dividers, rules" },
+      "accent": { "value": "#6B7B6E", "type": "color", "description": "Verse numbers, labels, icons" },
+      "text-primary": { "value": "#1A1A1A", "type": "color", "description": "Body text" },
+      "text-secondary": { "value": "#506855", "type": "color", "description": "Captions, liturgical labels" }
+    },
+    "night": {
+      "background": { "value": "#040806", "type": "color", "description": "Page ground" },
+      "surface": { "value": "#0A100C", "type": "color", "description": "Cards, response blocks" },
+      "border": { "value": "#1E2820", "type": "color", "description": "Dividers, rules" },
+      "accent": { "value": "#4A6B52", "type": "color", "description": "Verse numbers, labels, icons" },
+      "text-primary": { "value": "#E0E4E0", "type": "color", "description": "Body text" },
+      "text-secondary": { "value": "#969C96", "type": "color", "description": "Captions, liturgical labels" }
+    }
+  },
+
+  "semantic": {
+    "liturgical": {
+      "highlight": {
+        "day": { "value": "#F5E6C8", "type": "color", "description": "User-marked verses" },
+        "night": { "value": "#3A2E14", "type": "color", "description": "User-marked verses — night" }
+      },
+      "active-reading": {
+        "day": { "value": "#E8F0EA", "type": "color", "description": "Current verse during Mass" },
+        "night": { "value": "#142018", "type": "color", "description": "Current verse during Mass — night" }
+      },
+      "congregation": {
+        "day": { "value": "#EAE6F4", "type": "color", "description": "Response lines, antiphons" },
+        "night": { "value": "#1A1630", "type": "color", "description": "Response lines, antiphons — night" }
+      },
+      "rubric": {
+        "day": { "value": "#C8403A", "type": "color", "description": "Priest instructions, stage directions" },
+        "night": { "value": "#A83030", "type": "color", "description": "Priest instructions — night" }
+      }
+    },
+    "season": {
+      "feast-day": {
+        "day": { "value": "#C8A040", "type": "color", "description": "Solemnities, high feast markers" },
+        "night": { "value": "#A87828", "type": "color", "description": "Solemnities — night" }
+      },
+      "ordinary-time": {
+        "day": { "value": "#5A8060", "type": "color", "description": "Weekday Mass, per annum" },
+        "night": { "value": "#3A5840", "type": "color", "description": "Weekday Mass — night" }
+      },
+      "advent-lent": {
+        "day": { "value": "#6B5090", "type": "color", "description": "Penitential seasons" },
+        "night": { "value": "#4A3468", "type": "color", "description": "Penitential seasons — night" }
+      },
+      "easter-christmas": {
+        "day": { "value": "#E8E0C8", "type": "color", "description": "White season backgrounds" },
+        "night": { "value": "#302C18", "type": "color", "description": "White season backgrounds — night" }
+      }
+    }
+  }
+}

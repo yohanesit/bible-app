@@ -1,0 +1,5 @@
+pypdf
+pdfplumber
+requests
+beautifulsoup4
+

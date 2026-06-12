@@ -51,3 +51,12 @@ Secrets.plist
 
 # Generated / intermediate data
 BibleApp/generated/
+
+# Downloaded USFM source cache (can be re-downloaded by scripts)
+.usfm_cache/
+
+# Large reference PDFs
+kitab_umat_katolik.pdf
+
+# AI agent session data (Cursor / Claude worktrees)
+.claude/
