@@ -106,6 +106,7 @@ struct ContentView: View {
                             LeftPaneView(
                                 selection: $leftSelection,
                                 selectedLabel: $selectedRightLabel,
+                                isOpen: scrolledID == .left,
                                 topSafeArea: topSafeArea,
                                 bottomSafeArea: bottomSafeArea,
                                 onOpenAppSettings: {

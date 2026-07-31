@@ -19,6 +19,8 @@ struct LeftPaneView: View {
     @Binding var selection: LeftSelection
     @Binding var selectedLabel: String?
 
+    /// Whether the sidebar drawer is currently visible.
+    var isOpen: Bool = false
     var topSafeArea: CGFloat
     var bottomSafeArea: CGFloat
     var onOpenAppSettings: () -> Void
@@ -32,6 +34,20 @@ struct LeftPaneView: View {
             return DailyPaneCalendar.longDisplayDate(forLabel: selectedLabel)
         case .book:
             return DailyPaneCalendar.longDisplayDate(forLabel: DailyPaneCalendar.todayFormattedLabel)
+        }
+    }
+
+    private var expandedFromSelection: ExpandedItem {
+        switch selection {
+        case .daily: return .daily
+        case .book(let name): return .book(name)
+        }
+    }
+
+    private var scrollAnchorID: String {
+        switch selection {
+        case .daily: return "lectionary"
+        case .book(let name): return name
         }
     }
 
@@ -53,66 +69,70 @@ struct LeftPaneView: View {
                 .padding(.top, topSafeArea + 12)
                 .padding(.bottom, 22)
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        BookRowView(
-                            title: "Lectionary",
-                            subtitle: dailyRowSubtitle,
-                            isSelected: selection == .daily
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                                expanded = (expanded == .daily) ? nil : .daily
-                            }
-                        }
-
-                        if expanded == .daily {
-                            DailyDateGridView(
-                                selectedLabel: selectedLabel,
-                                onSelectLabel: { label in
-                                    selectedLabel = label
-                                    selection = .daily
-                                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                                        expanded = nil
-                                    }
-                                    onClose()
-                                }
-                            )
-                            .transition(.opacity)
-                        }
-
-                        ForEach(BibleCatalog.books) { book in
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
                             BookRowView(
-                                title: book.name,
-                                subtitle: "\(book.chapterCount) Chapters",
-                                isSelected: selection == .book(book.name)
+                                title: "Lectionary",
+                                subtitle: dailyRowSubtitle,
+                                isSelected: selection == .daily
                             )
                             .contentShape(Rectangle())
+                            .id("lectionary")
                             .onTapGesture {
                                 withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                                    expanded = (expanded == .book(book.name)) ? nil : .book(book.name)
+                                    expanded = (expanded == .daily) ? nil : .daily
                                 }
                             }
 
-                            if expanded == .book(book.name) {
-                                ChapterGridView(
-                                    book: book,
+                            if expanded == .daily {
+                                DailyDateGridView(
                                     selectedLabel: selectedLabel,
-                                    isBookActive: selection == .book(book.name)
-                                ) { chapterStr in
-                                    selectedLabel = chapterStr
-                                    selection = .book(book.name)
-                                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                                        expanded = nil
+                                    onSelectLabel: { label in
+                                        selectedLabel = label
+                                        selection = .daily
+                                        expanded = .daily
+                                        onClose()
                                     }
-                                    onClose()
-                                }
+                                )
                                 .transition(.opacity)
                             }
+
+                            ForEach(BibleCatalog.books) { book in
+                                BookRowView(
+                                    title: book.name,
+                                    subtitle: "\(book.chapterCount) Chapters",
+                                    isSelected: selection == .book(book.name)
+                                )
+                                .contentShape(Rectangle())
+                                .id(book.name)
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                                        expanded = (expanded == .book(book.name)) ? nil : .book(book.name)
+                                    }
+                                }
+
+                                if expanded == .book(book.name) {
+                                    ChapterGridView(
+                                        book: book,
+                                        selectedLabel: selectedLabel,
+                                        isBookActive: selection == .book(book.name)
+                                    ) { chapterStr in
+                                        selectedLabel = chapterStr
+                                        selection = .book(book.name)
+                                        expanded = .book(book.name)
+                                        onClose()
+                                    }
+                                    .transition(.opacity)
+                                }
+                            }
                         }
+                        .padding(.bottom, 96)
                     }
-                    .padding(.bottom, 96)
+                    .onChange(of: isOpen) { _, open in
+                        guard open else { return }
+                        restoreExpandedState(proxy: proxy)
+                    }
                 }
             }
 
@@ -126,6 +146,20 @@ struct LeftPaneView: View {
             Rectangle()
                 .fill(colors.border.opacity(0.85))
                 .frame(width: 1)
+        }
+    }
+
+    /// Re-open the accordion for the current reading and scroll it into view.
+    private func restoreExpandedState(proxy: ScrollViewProxy) {
+        let target = expandedFromSelection
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            expanded = target
+        }
+        // Wait a beat so the LazyVStack can materialize the target row / grid.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                proxy.scrollTo(scrollAnchorID, anchor: .center)
+            }
         }
     }
 }
