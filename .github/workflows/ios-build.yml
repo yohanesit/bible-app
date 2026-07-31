@@ -1,0 +1,42 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build BibleApp (Simulator)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build for iOS Simulator
+        working-directory: BibleApp
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project BibleApp.xcodeproj \
+            -scheme BibleApp \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload .app artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BibleApp-simulator
+          path: ${{ runner.temp }}/DerivedData/Build/Products/Debug-iphonesimulator/BibleApp.app
+          if-no-files-found: warn
+          retention-days: 14
