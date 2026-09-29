@@ -27,11 +27,10 @@ still edit Swift sources and work on the Python pipeline.
 
 - System Python is `3.12` and is **externally managed (PEP 668)** — install into
   the project venv, not system-wide.
-- The startup update script creates/refreshes `.venv/` and installs
+- Cloud Builds run `.cursor/install.sh` (see `.cursor/environment.json`). On
+  Linux it installs `python3-venv` if needed, then creates `.venv/` and installs
   `scripts/requirements.txt` (`requests`, `beautifulsoup4`, `pdfplumber`,
   `pypdf`). Run scripts with `.venv/bin/python`.
-- `python3-venv` is a system package (already provisioned in the VM image); it is
-  intentionally **not** in the update script.
 
 ### Running / testing the pipeline
 
